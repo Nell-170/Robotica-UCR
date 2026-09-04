@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/layout"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <com.softbankrobotics.qisdktutorials.ui.bilateralswitch.RoundedLayout
+        android:id="@+id/background_layer"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        app:layout_constraintBottom_toBottomOf="@+id/level_view"
+        app:layout_constraintEnd_toEndOf="@+id/second_section"
+        app:layout_constraintStart_toStartOf="@+id/first_section"
+        app:layout_constraintTop_toTopOf="@+id/level_view"
+        android:background="@color/unselected_category_gray" />
+
+    <com.softbankrobotics.qisdktutorials.ui.bilateralswitch.RoundedLayout
+        android:id="@+id/color_layer"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        tools:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="@+id/level_view"
+        app:layout_constraintEnd_toEndOf="@+id/level_view"
+        app:layout_constraintStart_toStartOf="@+id/first_section"
+        app:layout_constraintTop_toTopOf="@+id/level_view" />
+
+    <TextView
+        android:id="@+id/first_section"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:paddingEnd="8dp"
+        android:paddingStart="32dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toStartOf="@+id/level_view"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        tools:text="&quot;Basic&quot;"
+        android:textColor="@android:color/black"
+        android:fontFamily="@font/open_sans_semibold" />
+
+    <TextView
+        android:id="@+id/level_view"
+        android:layout_width="42dp"
+        android:layout_height="42dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toStartOf="@+id/second_section"
+        app:layout_constraintStart_toEndOf="@id/first_section"
+        app:layout_constraintTop_toTopOf="parent"
+        android:gravity="center"
+        tools:text="@string/basic_level"
+        android:textSize="18sp"
+        android:textColor="@android:color/black"
+        android:fontFamily="@font/open_sans_semibold"
+        android:background="@drawable/switch_level_shape" />
+
+    <TextView
+        android:id="@+id/second_section"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:paddingEnd="32dp"
+        android:paddingStart="8dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toEndOf="@id/level_view"
+        app:layout_constraintTop_toTopOf="parent"
+        tools:text="&quot;Advanced&quot;"
+        android:textColor="@android:color/black"
+        android:fontFamily="@font/open_sans_semibold" />
+
+    <com.softbankrobotics.qisdktutorials.ui.bilateralswitch.RoundedLayout
+        android:id="@+id/button_hover"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:alpha="0.3"
+        android:background="#000"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="@+id/level_view"
+        app:layout_constraintEnd_toEndOf="@+id/level_view"
+        app:layout_constraintStart_toStartOf="@+id/level_view"
+        app:layout_constraintTop_toTopOf="@+id/level_view" />
+
+</androidx.constraintlayout.widget.ConstraintLayout>

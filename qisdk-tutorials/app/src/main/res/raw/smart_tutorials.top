@@ -1,0 +1,19 @@
+topic: ~smart_tutorials()
+
+concept:(human) ["{Mastering} HumanAwareness {"and Human"}" "Mastering Human"]
+concept:(touch) ["React {when} touched"]
+concept:(picture) ["Take {a} picture"]
+concept:(abilities) ["{hold release} autonomous abilities"]
+concept:(emotion) ["Mastering Emotion {detection}" "emotion detection"]
+concept:(tabletreachability) ["{Enforce} tablet reachability"]
+concept:(detect_humans_with_localization) ["Detect humans {"with localization"}" localization]
+concept:(extend_map) ["Extend {a} map"]
+
+u: ("~touch $level==basic") ^endDiscuss(touch)
+u: ("~abilities $level==basic") ^endDiscuss(autonomous)
+u: ("~picture $level==basic") ^endDiscuss(picture)
+u: ("~tabletreachability $level==basic") ^endDiscuss(enforce_tablet_reachability)
+u: ("~human $level==advanced") ^endDiscuss(people_characteristics)
+u: ("~emotion $level==advanced") ^endDiscuss(emotion)
+u: ("~detect_humans_with_localization $level==advanced") ^endDiscuss(detect_humans_with_localization)
+u: ("~extend_map $level==advanced") ^endDiscuss(extend_map)

@@ -1,0 +1,5 @@
+topic: ~mimic_animal()
+
+proposal: %mimic_proposal Say dog or elephant
+    u1: (dog) OK, I've reached the dog bookmark %dog_mimic
+    u1: (elephant) OK, I've reached the elephant bookmark %elephant_mimic
