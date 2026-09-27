@@ -33,8 +33,11 @@ def check_nao_connection(ip, port, timeout=2):
         print("Error al verificar conexion: {}".format(e))
         return False
 
-# Mundo de NAO a cargar por defecto (viene incluido con Webots)
-NAO_WORLD = r"C:\Program Files\Webots\projects\robots\softbank\nao\worlds\nao_room.wbt"
+# Mundo de NAO-Med (incluye el controlador nao_med_controller ya asignado)
+NAO_WORLD = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "webots", "worlds", "nao_med.wbt"
+)
 
 def find_webots_executable():
     """Busca el ejecutable de Webots en las ubicaciones comunes de Windows."""

@@ -119,23 +119,45 @@ def _notificar_webots(medicamento):
     Comunica con el controlador de Webots para ejecutar la notificacion.
     
     El controlador de Webots corre dentro del simulador y recibe comandos
-    via socket desde este proceso externo.
+    via socket desde este proceso externo. Webots puede tardar varios
+    segundos en abrir, cargar el mundo y arrancar el controlador, asi
+    que reintentamos la conexion durante un rato antes de rendirnos.
     """
+    intentos_conexion = 15
+    espera_entre_intentos = 2  # segundos
+    # La secuencia real en el controlador de Webots: ~2s de alarma + caminata
+    # con el archivo Forwards50.motion (~6.8s por cada 0.5m, 2 ciclos para 1m
+    # = ~13.6s). Total real ~15.6s; usamos ~25s (1.6x) de margen.
+    timeout_respuesta = 25
+
+    sock = None
+    for intento in range(1, intentos_conexion + 1):
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(3)
+            sock.connect(("127.0.0.1", 9000))
+            break
+        except Exception as e:
+            sock = None
+            if intento == 1:
+                print("[WEBOTS] Esperando a que el controlador este listo...")
+            if intento == intentos_conexion:
+                print("Aviso: no se pudo conectar al controlador de Webots ({}).".format(e))
+                print("Asegurate de que Webots este abierto con nao_med.wbt cargado.")
+            else:
+                time.sleep(espera_entre_intentos)
+
+    if sock is None:
+        return
+
     try:
-        # Conectar al controlador de Webots (que corre en localhost:9000)
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(2)
-        sock.connect(("127.0.0.1", 9000))
-        
-        # Enviar comando de notificacion
         comando = "NOTIFICAR:{}".format(medicamento)
         sock.send(comando.encode("utf-8"))
-        
-        # Esperar respuesta
+
+        sock.settimeout(timeout_respuesta)
         respuesta = sock.recv(1024).decode("utf-8")
         print("[WEBOTS] Respuesta: {}".format(respuesta))
-        
-        sock.close()
     except Exception as e:
-        print("Aviso: no se pudo conectar al controlador de Webots ({}).".format(e))
-        print("Asegurate de que Webots esta abierto y el controlador esta corriendo.")
+        print("Aviso: no se recibio respuesta del controlador de Webots ({}).".format(e))
+    finally:
+        sock.close()

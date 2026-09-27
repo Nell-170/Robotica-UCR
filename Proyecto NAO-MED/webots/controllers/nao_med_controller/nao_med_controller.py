@@ -1,0 +1,152 @@
+# -*- coding: utf-8 -*-
+"""
+Controlador de NAO para Webots (NAO-Med).
+
+Corre DENTRO del simulador Webots (asignado como "controller" del
+nodo Nao en el mundo nao_med.wbt). Escucha comandos por socket desde
+el proceso externo (main.py -> nao_controller.py) y mueve/hace hablar
+al NAO simulado en consecuencia.
+"""
+import os
+import socket
+import time
+
+from controller import Robot, Motion
+
+PUERTO_ESCUCHA = 9000
+
+# El archivo .motion viene copiado dentro del proyecto (webots/motions/) para
+# no depender de la ruta interna de instalacion de Webots en cada maquina.
+RUTA_MOTION_CAMINAR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "motions", "Forwards50.motion"
+)
+
+
+class NAOMedController(object):
+    def __init__(self):
+        self.robot = Robot()
+        self.timestep = int(self.robot.getBasicTimeStep())
+
+        # Nombres reales de los dispositivos del modelo Nao de Webots
+        # (verificados contra Nao.proto; no son los mismos nombres que usa
+        # NAOqi en el robot real).
+        self.leds = {
+            "left_eye": self._get_device_seguro("Face/Led/Left"),
+            "right_eye": self._get_device_seguro("Face/Led/Right"),
+        }
+        self.motion_caminar = None
+        if os.path.exists(RUTA_MOTION_CAMINAR):
+            self.motion_caminar = Motion(RUTA_MOTION_CAMINAR)
+        else:
+            print("[WEBOTS] Aviso: no se encontro el archivo de movimiento {}".format(RUTA_MOTION_CAMINAR))
+
+        # El Nao de Webots no tiene un dispositivo de audio/TTS: no existe
+        # forma de que "hable" con sonido dentro del simulador, asi que la
+        # frase solo se imprime en la consola de Webots.
+
+        self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.server.bind(("127.0.0.1", PUERTO_ESCUCHA))
+        self.server.listen(1)
+        self.server.settimeout(0.0)  # no bloqueante
+
+        print("[WEBOTS] Controlador NAO-Med escuchando en puerto {}".format(PUERTO_ESCUCHA))
+
+    def _get_device_seguro(self, nombre):
+        try:
+            return self.robot.getDevice(nombre)
+        except Exception:
+            print("[WEBOTS] Aviso: dispositivo '{}' no disponible en este modelo.".format(nombre))
+            return None
+
+    def encender_luces(self, color=0x00A2FF):
+        for led in self.leds.values():
+            if led:
+                led.set(color)
+        print("[WEBOTS] Luces encendidas: 0x{:06X}".format(color))
+
+    def apagar_luces(self):
+        for led in self.leds.values():
+            if led:
+                led.set(0xFFFFFF)
+        print("[WEBOTS] Luces apagadas")
+
+    def reproducir_alarma(self, duracion=2):
+        print("[WEBOTS] ALARMA SONORA ({} segundos)".format(duracion))
+        self._esperar(duracion)
+
+    def caminar_hacia_frente(self, distancia=1.0):
+        # El Nao de Webots no tiene un metodo "moveTo(distancia)" como NAOqi;
+        # caminar se logra reproduciendo un archivo .motion (Forwards50.motion,
+        # ~50cm por ciclo) sobre los motores de las piernas. Para aproximar
+        # la distancia pedida, se reproduce el ciclo las veces necesarias.
+        print("[WEBOTS] Caminando {} metros hacia el frente...".format(distancia))
+        if not self.motion_caminar:
+            print("[WEBOTS] Aviso: no hay movimiento de caminata cargado, se omite.")
+            self._esperar(3)
+            return
+
+        ciclos = max(int(round(distancia / 0.5)), 1)
+        for _ in range(ciclos):
+            self.motion_caminar.play()
+            while not self.motion_caminar.isOver():
+                if self.robot.step(self.timestep) == -1:
+                    return
+
+    def decir_frase(self, medicamento):
+        frase = "Te toca tu medicina, por favor tomate el {}".format(medicamento)
+        # El Nao de Webots no incluye un dispositivo de audio/TTS: no hay
+        # forma de simular la voz con sonido, solo se muestra el texto.
+        print("[WEBOTS] Diciendo: {}".format(frase))
+
+    def ejecutar_notificacion(self, medicamento):
+        print("[WEBOTS] === NOTIFICACION DE MEDICAMENTO ===")
+        print("[WEBOTS] Medicamento: {}".format(medicamento))
+
+        self.reproducir_alarma(2)
+        self.encender_luces()
+        self.caminar_hacia_frente(1.0)
+        self.decir_frase(medicamento)
+        self.apagar_luces()
+
+        print("[WEBOTS] === NOTIFICACION COMPLETADA ===")
+
+    def _esperar(self, segundos):
+        """Espera 'segundos' avanzando la simulacion paso a paso."""
+        pasos = int((segundos * 1000) / self.timestep)
+        for _ in range(max(pasos, 1)):
+            if self.robot.step(self.timestep) == -1:
+                break
+
+    def _atender_conexiones(self):
+        """Revisa si hay una conexion entrante y procesa el comando."""
+        try:
+            conn, _ = self.server.accept()
+        except socket.error:
+            return  # no hay conexiones pendientes
+
+        conn.settimeout(2)
+        try:
+            data = conn.recv(1024)
+            comando = data.decode("utf-8").strip()
+            if comando.startswith("NOTIFICAR:"):
+                medicamento = comando.split(":", 1)[1]
+                self.ejecutar_notificacion(medicamento)
+                conn.send("OK".encode("utf-8"))
+            else:
+                conn.send("COMANDO_DESCONOCIDO".encode("utf-8"))
+        except Exception as e:
+            print("[WEBOTS] Error atendiendo conexion: {}".format(e))
+        finally:
+            conn.close()
+
+    def run(self):
+        print("[WEBOTS] Controlador corriendo. Esperando comandos...")
+        while self.robot.step(self.timestep) != -1:
+            self._atender_conexiones()
+
+
+if __name__ == "__main__":
+    controller = NAOMedController()
+    controller.run()
