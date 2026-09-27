@@ -54,7 +54,14 @@ def cargar_cronograma(csv_path=DEFAULT_CSV_PATH):
         )
 
     entradas = []
-    with open(csv_path, "rb") as f:
+    # En Python 2.7 se abre en "rb", en Python 3 en "r" (texto).
+    # Intentamos primero con "r" (Python 3), si falla usamos "rb" (Python 2.7).
+    try:
+        f = open(csv_path, "r")
+    except TypeError:
+        f = open(csv_path, "rb")
+    
+    try:
         lector = csv.DictReader(f)
         for fila_num, fila in enumerate(lector, start=2):
             medicamento = (fila.get("medicamento") or "").strip()
@@ -84,6 +91,8 @@ def cargar_cronograma(csv_path=DEFAULT_CSV_PATH):
                 "hora": hora,
                 "minuto": minuto,
             })
+    finally:
+        f.close()
 
     return entradas
 
