@@ -15,7 +15,11 @@ rostro es un incremento de dificultad futuro.
 """
 import time
 
-from naoqi import ALProxy
+try:
+    from naoqi import ALProxy
+except ImportError:
+    print("[WARN] naoqi no disponible, usando mock para testing")
+    from naoqi_mock import ALProxy
 
 # Distancia (en metros) que camina el NAO en linea recta hacia el frente
 DISTANCIA_CAMINATA_METROS = 1.0

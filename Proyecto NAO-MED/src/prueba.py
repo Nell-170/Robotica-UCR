@@ -30,9 +30,9 @@ def main():
         tts.say("Python also works")
         print("✅ Mensaje enviado al robot")
     except Exception as e:
-        print(f"❌ Error al conectar: {e}")
-        print(f"   Tipo: {config['type']}")
-        print(f"   IP: {config['ip']}")
+        print("[ERROR] Error al conectar: {}".format(e))
+        print("   Tipo: {}".format(config['type']))
+        print("   IP: {}".format(config['ip']))
 
 if __name__ == "__main__":
     main()
