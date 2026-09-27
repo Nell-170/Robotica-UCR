@@ -1,0 +1,8 @@
+# Dependencias del Proyecto NAO-MED
+#
+# NAOqi SDK (naoqi.ALProxy) NO se instala vía pip: hay que descargar el
+# "Python SDK" oficial de Aldebaran/SoftBank para NAOqi 2.8.7.4 desde:
+# https://www.softbankrobotics.com/emea/en/support/nao-6/downloads-softwares
+# y agregarlo al PYTHONPATH.
+#
+# Este archivo cubre las dependencias que sí se instalan con pip.
