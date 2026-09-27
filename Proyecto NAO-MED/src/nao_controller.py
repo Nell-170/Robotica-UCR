@@ -14,6 +14,7 @@ distancia fija asumiendo que esta enfrente. La deteccion real de
 rostro es un incremento de dificultad futuro.
 """
 import time
+import socket
 
 try:
     from naoqi import ALProxy
@@ -90,15 +91,51 @@ def notificar_medicamento(config, medicamento):
     alarma -> luces -> caminar -> hablar.
 
     'config' es el dict retornado por robot_connector (ip, port, type).
+    
+    Si es simulador (Webots), usa webots_controller.
+    Si es robot real, usa NAOqi (ALProxy).
     """
     ip, puerto = config["ip"], config["port"]
+    robot_type = config["type"]
 
     print("Notificando medicamento '{}' via {}...".format(medicamento, config['description']))
 
-    _reproducir_alarma(ip, puerto)
-    _encender_luces(ip, puerto)
-    _caminar_hacia_frente(ip, puerto)
-    _decir_frase(ip, puerto, medicamento)
-    _apagar_luces(ip, puerto)
+    if robot_type == "simulator":
+        # Usar controlador de Webots
+        _notificar_webots(medicamento)
+    else:
+        # Usar NAOqi para robot real
+        _reproducir_alarma(ip, puerto)
+        _encender_luces(ip, puerto)
+        _caminar_hacia_frente(ip, puerto)
+        _decir_frase(ip, puerto, medicamento)
+        _apagar_luces(ip, puerto)
 
     print("Notificacion completada.")
+
+
+def _notificar_webots(medicamento):
+    """
+    Comunica con el controlador de Webots para ejecutar la notificacion.
+    
+    El controlador de Webots corre dentro del simulador y recibe comandos
+    via socket desde este proceso externo.
+    """
+    try:
+        # Conectar al controlador de Webots (que corre en localhost:9000)
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(2)
+        sock.connect(("127.0.0.1", 9000))
+        
+        # Enviar comando de notificacion
+        comando = "NOTIFICAR:{}".format(medicamento)
+        sock.send(comando.encode("utf-8"))
+        
+        # Esperar respuesta
+        respuesta = sock.recv(1024).decode("utf-8")
+        print("[WEBOTS] Respuesta: {}".format(respuesta))
+        
+        sock.close()
+    except Exception as e:
+        print("Aviso: no se pudo conectar al controlador de Webots ({}).".format(e))
+        print("Asegurate de que Webots esta abierto y el controlador esta corriendo.")
