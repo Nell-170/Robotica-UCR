@@ -9,9 +9,11 @@ import sys
 import os
 
 # Forzar UTF-8 en la salida para que los emojis no rompan la consola de Windows
-if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
-    sys.stdout.reconfigure(encoding="utf-8")
-    sys.stderr.reconfigure(encoding="utf-8")
+# (solo en Python 3.7+; en Python 2.7 no existe reconfigure)
+if sys.version_info[0] >= 3 and hasattr(sys.stdout, 'reconfigure'):
+    if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
 
 # Configuración
 NAO_IP = "192.168.1.140"
