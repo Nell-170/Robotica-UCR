@@ -10,8 +10,15 @@ al NAO simulado en consecuencia.
 import os
 import socket
 import time
+import numpy as np
 
 from controller import Robot, Motion
+
+try:
+    import cv2
+    OPENCV_DISPONIBLE = True
+except ImportError:
+    OPENCV_DISPONIBLE = False
 
 PUERTO_ESCUCHA = 9000
 
@@ -45,6 +52,22 @@ class NAOMedController(object):
             self.motion_caminar = Motion(RUTA_MOTION_CAMINAR)
         else:
             print("[WEBOTS] Aviso: no se encontro el archivo de movimiento {}".format(RUTA_MOTION_CAMINAR))
+
+        # Camara del Nao para deteccion de rostros
+        self.camera = self._get_device_seguro("CameraTop")
+        if self.camera:
+            self.camera.enable(self.timestep)
+        
+        # Cascade classifier para deteccion de rostros (OpenCV)
+        self.face_cascade = None
+        if OPENCV_DISPONIBLE:
+            cascade_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+            self.face_cascade = cv2.CascadeClassifier(cascade_path)
+            if self.face_cascade.empty():
+                print("[WEBOTS] Aviso: no se pudo cargar el cascade classifier de rostros")
+                self.face_cascade = None
+        else:
+            print("[WEBOTS] Aviso: OpenCV no disponible, deteccion de rostros deshabilitada")
 
         # El Nao de Webots no tiene un dispositivo de audio/TTS: no existe
         # forma de que "hable" con sonido dentro del simulador, asi que la
@@ -107,15 +130,48 @@ class NAOMedController(object):
     def decir_frase(self, medicamento):
         self.decir("Te toca tu medicina, por favor tomate el {}".format(medicamento))
 
-    def detectar_rostro(self):
-        # Webots no trae un modulo equivalente a ALFaceDetection para el
-        # modelo de NAO, asi que aqui solo se simula el resultado para
-        # mantener el mismo flujo que el robot real (nao_controller.py +
-        # reconocimiento.py). Es esta deteccion la que activa la caminata
-        # y el mensaje: en el robot real es una deteccion real via
-        # ALFaceDetection.
-        print("[WEBOTS] Rostro detectado (simulado)")
-        return True
+    def detectar_rostro(self, timeout=8.0):
+        # Intenta detectar un rostro usando la camara del Nao y OpenCV.
+        # Si OpenCV no esta disponible, simula el resultado.
+        # Timeout: espera hasta 'timeout' segundos a que aparezca un rostro.
+        if not self.camera or not self.face_cascade or not OPENCV_DISPONIBLE:
+            print("[WEBOTS] Rostro detectado (simulado, sin camara/OpenCV)")
+            return True
+        
+        inicio = time.time()
+        while time.time() - inicio < timeout:
+            # Captura frame de la camara
+            image_data = self.camera.getImage()
+            if not image_data:
+                self.robot.step(self.timestep)
+                continue
+            
+            try:
+                # Convierte el formato de Webots a numpy array (RGBA -> BGR para OpenCV)
+                width = self.camera.getWidth()
+                height = self.camera.getHeight()
+                image_array = np.frombuffer(image_data, dtype=np.uint8).reshape((height, width, 4))
+                # Convierte RGBA a BGR (OpenCV espera BGR)
+                image_bgr = image_array[:, :, [2, 1, 0]]
+                
+                # Convierte a escala de grises para la deteccion
+                gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
+                
+                # Detecta rostros
+                faces = self.face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
+                
+                if len(faces) > 0:
+                    print("[WEBOTS] Rostro detectado (real, {} rostro(s) encontrado(s))".format(len(faces)))
+                    return True
+            except Exception as e:
+                print("[WEBOTS] Error en deteccion de rostro: {}".format(e))
+                return True
+            
+            # Avanza la simulacion un paso
+            self.robot.step(self.timestep)
+        
+        print("[WEBOTS] No se detecto ningun rostro en {} segundos".format(timeout))
+        return False
 
     def ejecutar_notificacion(self, medicamento):
         print("[WEBOTS] === NOTIFICACION DE MEDICAMENTO ===")
