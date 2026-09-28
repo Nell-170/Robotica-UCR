@@ -47,3 +47,22 @@ class ALProxy(object):
     def say(self, text):
         """Mock de say para ALTextToSpeech."""
         print("[MOCK] say('{}')".format(text))
+
+    def subscribe(self, name):
+        """Mock de subscribe, usado por ALFaceDetection."""
+        print("[MOCK] subscribe('{}')".format(name))
+
+    def unsubscribe(self, name):
+        """Mock de unsubscribe, usado por ALFaceDetection."""
+        print("[MOCK] unsubscribe('{}')".format(name))
+
+    def getData(self, key):
+        """
+        Mock de getData para ALMemory. Simula que siempre se detecta un
+        rostro, para poder probar el flujo completo sin robot.
+        """
+        print("[MOCK] getData('{}')".format(key))
+        if key == "FaceDetected":
+            # Formato real: [marca_tiempo, [ShapeInfo, ExtraInfo], camaraId, tiempo]
+            return [time.time(), [[[0.0, 0.0, 0.0, 0.0], [0, 0, 0]]], 0, 0.0]
+        return []

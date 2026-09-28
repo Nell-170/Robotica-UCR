@@ -15,6 +15,11 @@ from controller import Robot, Motion
 
 PUERTO_ESCUCHA = 9000
 
+# Frases que dice el NAO segun el resultado de la deteccion de rostro
+# (mismo texto que usa el robot fisico en nao_controller.py).
+FRASE_ROSTRO_DETECTADO = "Te veo, que tengas un buen dia."
+FRASE_ROSTRO_NO_DETECTADO = "No veo a nadie, por favor acercate."
+
 # El archivo .motion viene copiado dentro del proyecto (webots/motions/) para
 # no depender de la ruta interna de instalacion de Webots en cada maquina.
 RUTA_MOTION_CAMINAR = os.path.join(
@@ -94,11 +99,22 @@ class NAOMedController(object):
                 if self.robot.step(self.timestep) == -1:
                     return
 
-    def decir_frase(self, medicamento):
-        frase = "Te toca tu medicina, por favor tomate el {}".format(medicamento)
+    def decir(self, texto):
         # El Nao de Webots no incluye un dispositivo de audio/TTS: no hay
         # forma de simular la voz con sonido, solo se muestra el texto.
-        print("[WEBOTS] Diciendo: {}".format(frase))
+        print("[WEBOTS] Diciendo: {}".format(texto))
+
+    def decir_frase(self, medicamento):
+        self.decir("Te toca tu medicina, por favor tomate el {}".format(medicamento))
+
+    def detectar_rostro(self):
+        # Webots no trae un modulo equivalente a ALFaceDetection para el
+        # modelo de NAO, asi que aqui solo se simula el resultado para
+        # mantener el mismo flujo que el robot real (nao_controller.py +
+        # reconocimiento.py). En el robot real esto si es una deteccion
+        # real via ALFaceDetection, hecha al final de la instruccion.
+        print("[WEBOTS] Rostro detectado (simulado)")
+        return True
 
     def ejecutar_notificacion(self, medicamento):
         print("[WEBOTS] === NOTIFICACION DE MEDICAMENTO ===")
@@ -108,6 +124,14 @@ class NAOMedController(object):
         self.encender_luces()
         self.caminar_hacia_frente(1.0)
         self.decir_frase(medicamento)
+
+        if self.detectar_rostro():
+            print("[WEBOTS] Persona confirmada frente al robot.")
+            self.decir(FRASE_ROSTRO_DETECTADO)
+        else:
+            print("[WEBOTS] No se pudo confirmar a la persona frente al robot.")
+            self.decir(FRASE_ROSTRO_NO_DETECTADO)
+
         self.apagar_luces()
 
         print("[WEBOTS] === NOTIFICACION COMPLETADA ===")

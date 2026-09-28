@@ -8,10 +8,15 @@ Secuencia al detectar que es hora de un medicamento:
     3. Camina en linea recta hacia el frente (distancia fija, sin
        deteccion de persona todavia)
     4. Dice la frase de notificacion del medicamento
+    5. Al final de la instruccion, reconocimiento de rostro (confirma
+       que la persona esta presente) y dice una frase distinta segun
+       si detecto o no a alguien
 
-Nota: por ahora el robot no detecta a la persona, solo avanza una
-distancia fija asumiendo que esta enfrente. La deteccion real de
-rostro es un incremento de dificultad futuro.
+La deteccion de rostro vive en reconocimiento.py, que usa el modulo de
+vision que NAOqi ya trae integrado (ALFaceDetection). Se hace al final
+para no bloquear ni condicionar la caminata: el robot siempre avanza
+hacia el frente como antes, y solo al terminar de hablar se confirma
+si la persona quedo frente a el.
 """
 import time
 import socket
@@ -22,6 +27,8 @@ except ImportError:
     print("[WARN] naoqi no disponible, usando mock para testing")
     from naoqi_mock import ALProxy
 
+from reconocimiento import reconocer_rostro
+
 # Distancia (en metros) que camina el NAO en linea recta hacia el frente
 DISTANCIA_CAMINATA_METROS = 1.0
 
@@ -30,6 +37,10 @@ DURACION_ALARMA_SEGUNDOS = 2
 
 # Color de las luces de los ojos al notificar (RGB en hexadecimal)
 COLOR_LUCES_NOTIFICACION = 0x00A2FF  # azul, para llamar la atencion
+
+# Frases que dice el NAO segun el resultado de la deteccion de rostro
+FRASE_ROSTRO_DETECTADO = "Te veo, que tengas un buen dia."
+FRASE_ROSTRO_NO_DETECTADO = "No veo a nadie, por favor acercate."
 
 
 def _reproducir_alarma(ip, puerto):
@@ -76,13 +87,18 @@ def _caminar_hacia_frente(ip, puerto, distancia=DISTANCIA_CAMINATA_METROS):
         print("Aviso: no se pudo mover el robot ({}).".format(e))
 
 
-def _decir_frase(ip, puerto, medicamento):
-    """Dice la frase de notificacion del medicamento."""
+def _decir(ip, puerto, texto):
+    """Hace que el NAO diga 'texto' usando ALTextToSpeech."""
     try:
         tts = ALProxy("ALTextToSpeech", ip, puerto)
-        tts.say("Te toca tu medicina, por favor tomate el {}".format(medicamento))
+        tts.say(texto)
     except Exception as e:
         print("Aviso: no se pudo hablar ({}).".format(e))
+
+
+def _decir_frase(ip, puerto, medicamento):
+    """Dice la frase de notificacion del medicamento."""
+    _decir(ip, puerto, "Te toca tu medicina, por favor tomate el {}".format(medicamento))
 
 
 def notificar_medicamento(config, medicamento):
@@ -109,6 +125,15 @@ def notificar_medicamento(config, medicamento):
         _encender_luces(ip, puerto)
         _caminar_hacia_frente(ip, puerto)
         _decir_frase(ip, puerto, medicamento)
+
+        hay_persona = reconocer_rostro(ip, puerto)
+        if hay_persona:
+            print("[NAO-MED] Persona confirmada frente al robot.")
+            _decir(ip, puerto, FRASE_ROSTRO_DETECTADO)
+        else:
+            print("[NAO-MED] No se pudo confirmar a la persona frente al robot.")
+            _decir(ip, puerto, FRASE_ROSTRO_NO_DETECTADO)
+
         _apagar_luces(ip, puerto)
 
     print("Notificacion completada.")
