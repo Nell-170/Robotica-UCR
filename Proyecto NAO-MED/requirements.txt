@@ -4,8 +4,14 @@
 #
 # Para correr en el ROBOT FÍSICO NAO:
 #   - Necesitas el "Python SDK" oficial de Aldebaran/SoftBank para NAOqi 2.8.7.4
-#   - Contacta a tu lab o a SoftBank Robotics para obtenerlo
-#   - Una vez descargado, agrégalo al PYTHONPATH
+#   
+#   Opciones para obtenerlo:
+#   1. Portal oficial (requiere login): https://developer.softbankrobotics.com/
+#   2. Contactar a SoftBank Robotics directamente
+#   3. Preguntar en tu lab si ya tienen el SDK instalado
+#   4. Buscar forks comunitarios en GitHub (buscar "pynaoqi")
+#   
+#   Una vez descargado, agrégalo al PYTHONPATH o cópialo a la carpeta del proyecto
 #
 # Para correr en WEBOTS (simulador):
 #   - NO necesitas NAOqi SDK — el código usa naoqi_mock.py automáticamente
