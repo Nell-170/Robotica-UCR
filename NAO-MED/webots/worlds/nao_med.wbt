@@ -139,6 +139,24 @@ Table {
   rotation 0 0 1 1.5708
   size 0.6 0.8 0.3
 }
+Solid {
+  translation -0.95 0.998 0.325
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 1 1 1
+        baseColorMap ImageTexture {
+          url [ "../../data/cubo_referencias/cubo.jpg" ]
+        }
+        roughness 1
+        metalness 0
+      }
+      geometry Box {
+        size 0.05 0.05 0.05
+      }
+    }
+  ]
+}
 Chair {
   translation -1.69 0 0
   color 0.25098 0.756863 0.368627
