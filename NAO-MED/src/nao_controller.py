@@ -5,18 +5,16 @@ Controlador de acciones del NAO para NAO-Med.
 Secuencia al detectar que es hora de un medicamento:
     1. Sonido de alarma (~2 segundos)
     2. Luces LED de los ojos encendidas
-    3. Camina en linea recta hacia el frente (distancia fija, sin
-       deteccion de persona todavia)
-    4. Dice la frase de notificacion del medicamento
-    5. Al final de la instruccion, reconocimiento de rostro (confirma
-       que la persona esta presente) y dice una frase distinta segun
-       si detecto o no a alguien
+    3. Reconocimiento de rostro: espera a ver a alguien frente al robot
+    4. Solo si detecta a una persona, camina en linea recta hacia el
+       frente y dice la frase de notificacion del medicamento
+    5. Si no detecta a nadie, el robot NO camina: solo dice que no ve
+       a nadie y pide que se acerque
 
 La deteccion de rostro vive en reconocimiento.py, que usa el modulo de
-vision que NAOqi ya trae integrado (ALFaceDetection). Se hace al final
-para no bloquear ni condicionar la caminata: el robot siempre avanza
-hacia el frente como antes, y solo al terminar de hablar se confirma
-si la persona quedo frente a el.
+vision que NAOqi ya trae integrado (ALFaceDetection). Es la que activa
+el movimiento: la caminata y el mensaje solo ocurren si hay alguien
+frente al robot.
 """
 import time
 import socket
@@ -123,15 +121,17 @@ def notificar_medicamento(config, medicamento):
         # Usar NAOqi para robot real
         _reproducir_alarma(ip, puerto)
         _encender_luces(ip, puerto)
-        _caminar_hacia_frente(ip, puerto)
-        _decir_frase(ip, puerto, medicamento)
 
+        # La deteccion de rostro es la que activa el movimiento:
+        # solo camina y notifica si ve a alguien frente al robot.
         hay_persona = reconocer_rostro(ip, puerto)
         if hay_persona:
-            print("[NAO-MED] Persona confirmada frente al robot.")
+            print("[NAO-MED] Persona detectada: el robot camina y notifica.")
+            _caminar_hacia_frente(ip, puerto)
+            _decir_frase(ip, puerto, medicamento)
             _decir(ip, puerto, FRASE_ROSTRO_DETECTADO)
         else:
-            print("[NAO-MED] No se pudo confirmar a la persona frente al robot.")
+            print("[NAO-MED] No se detecto a nadie: el robot no camina.")
             _decir(ip, puerto, FRASE_ROSTRO_NO_DETECTADO)
 
         _apagar_luces(ip, puerto)

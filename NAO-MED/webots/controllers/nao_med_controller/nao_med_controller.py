@@ -111,8 +111,9 @@ class NAOMedController(object):
         # Webots no trae un modulo equivalente a ALFaceDetection para el
         # modelo de NAO, asi que aqui solo se simula el resultado para
         # mantener el mismo flujo que el robot real (nao_controller.py +
-        # reconocimiento.py). En el robot real esto si es una deteccion
-        # real via ALFaceDetection, hecha al final de la instruccion.
+        # reconocimiento.py). Es esta deteccion la que activa la caminata
+        # y el mensaje: en el robot real es una deteccion real via
+        # ALFaceDetection.
         print("[WEBOTS] Rostro detectado (simulado)")
         return True
 
@@ -122,14 +123,16 @@ class NAOMedController(object):
 
         self.reproducir_alarma(2)
         self.encender_luces()
-        self.caminar_hacia_frente(1.0)
-        self.decir_frase(medicamento)
 
+        # La deteccion de rostro es la que activa el movimiento:
+        # solo camina y notifica si ve a alguien frente al robot.
         if self.detectar_rostro():
-            print("[WEBOTS] Persona confirmada frente al robot.")
+            print("[WEBOTS] Persona detectada: el robot camina y notifica.")
+            self.caminar_hacia_frente(1.0)
+            self.decir_frase(medicamento)
             self.decir(FRASE_ROSTRO_DETECTADO)
         else:
-            print("[WEBOTS] No se pudo confirmar a la persona frente al robot.")
+            print("[WEBOTS] No se detecto a nadie: el robot no camina.")
             self.decir(FRASE_ROSTRO_NO_DETECTADO)
 
         self.apagar_luces()
