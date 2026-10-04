@@ -157,6 +157,26 @@ Solid {
     }
   ]
 }
+Solid {
+  translation -0.5 1.4 0.5
+  rotation 0.57735 -0.57735 -0.57735 2.0944
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 1 1 1
+        baseColorMap ImageTexture {
+          url [ "../../data/imagenes/rostro_prueba.png" ]
+        }
+        roughness 1
+        metalness 0
+      }
+      geometry Plane {
+        size 1 1
+      }
+    }
+  ]
+  name "rostro_prueba"
+}
 Chair {
   translation -1.69 0 0
   color 0.25098 0.756863 0.368627
