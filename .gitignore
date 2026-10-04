@@ -44,3 +44,6 @@ env/
 # OS
 Thumbs.db
 .DS_Store
+
+# Dependencias locales del simulador (run.bat setup)
+NAO-MED/webots/libs/
