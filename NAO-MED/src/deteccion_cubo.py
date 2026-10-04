@@ -30,7 +30,13 @@ RUTA_REFERENCIAS_CUBO = os.path.normpath(os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "data", "cubo_referencias"
 ))
 
-TIMEOUT_CUBO_SEGUNDOS = 8.0
+# Inclinaciones de la cabeza (radianes, HeadPitch: negativo = arriba,
+# positivo = abajo; rango NAO -0.67 a 0.51). El robot barre estas
+# posiciones hasta encontrar el cubo, asi no tiene que estar a la altura
+# de sus ojos.
+INCLINACIONES_CABEZA = (0.0, 0.35, 0.5, -0.3, -0.6)
+SEGUNDOS_POR_INCLINACION = 2.0
+PAUSA_CABEZA_SEGUNDOS = 0.8
 COINCIDENCIAS_MINIMAS = 8
 
 CAMARA_SUPERIOR = 0
@@ -53,8 +59,8 @@ def _cargar_referencias(orb):
     return descriptores
 
 
-def detectar_cubo(ip, puerto, timeout=TIMEOUT_CUBO_SEGUNDOS):
-    """Retorna True si ve el cubo en la camara del NAO dentro de 'timeout' s."""
+def detectar_cubo(ip, puerto):
+    """Retorna True si ve el cubo en la camara del NAO moviendo la cabeza arriba y abajo."""
     if not OPENCV_DISPONIBLE:
         print("[CUBO] OpenCV/numpy no disponibles: deteccion del cubo omitida.")
         return False
@@ -74,37 +80,61 @@ def detectar_cubo(ip, puerto, timeout=TIMEOUT_CUBO_SEGUNDOS):
         print("Aviso: no se pudo abrir la camara ({}).".format(e))
         return False
 
+    try:
+        motion = ALProxy("ALMotion", ip, puerto)
+        motion.setStiffnesses("Head", 1.0)
+    except Exception as e:
+        print("Aviso: no se pudo controlar la cabeza ({}).".format(e))
+        motion = None
+
     matcher = cv2.BFMatcher(cv2.NORM_HAMMING)
     mejor_global = 0
+    encontrado = False
     try:
-        inicio = time.time()
-        while time.time() - inicio < timeout:
-            try:
-                frame = video.getImageRemote(suscripcion)
-                if frame:
-                    ancho, alto, capas = frame[0], frame[1], frame[2]
-                    imagen = np.frombuffer(bytes(frame[6]), dtype=np.uint8).reshape((alto, ancho, capas))
-                    gris = cv2.cvtColor(imagen, cv2.COLOR_BGR2GRAY)
-                    _, desc = orb.detectAndCompute(gris, None)
-                    if desc is not None:
-                        for ref in referencias:
-                            pares = matcher.knnMatch(ref, desc, k=2)
-                            buenas = [p[0] for p in pares
-                                      if len(p) == 2 and p[0].distance < 0.75 * p[1].distance]
-                            mejor_global = max(mejor_global, len(buenas))
-                    if mejor_global >= COINCIDENCIAS_MINIMAS:
-                        print("[CUBO] Cubo detectado ({} coincidencias).".format(mejor_global))
-                        return True
-            except Exception as e:
-                print("Aviso: error en deteccion del cubo ({}).".format(e))
-                return False
-            time.sleep(0.1)
+        for inclinacion in INCLINACIONES_CABEZA:
+            if motion:
+                try:
+                    motion.setAngles("HeadPitch", inclinacion, 0.2)
+                except Exception as e:
+                    print("Aviso: no se pudo mover la cabeza ({}).".format(e))
+                time.sleep(PAUSA_CABEZA_SEGUNDOS)
+            inicio = time.time()
+            while time.time() - inicio < SEGUNDOS_POR_INCLINACION:
+                try:
+                    frame = video.getImageRemote(suscripcion)
+                    if frame:
+                        ancho, alto, capas = frame[0], frame[1], frame[2]
+                        imagen = np.frombuffer(bytes(frame[6]), dtype=np.uint8).reshape((alto, ancho, capas))
+                        gris = cv2.cvtColor(imagen, cv2.COLOR_BGR2GRAY)
+                        _, desc = orb.detectAndCompute(gris, None)
+                        if desc is not None:
+                            for ref in referencias:
+                                pares = matcher.knnMatch(ref, desc, k=2)
+                                buenas = [p[0] for p in pares
+                                          if len(p) == 2 and p[0].distance < 0.75 * p[1].distance]
+                                mejor_global = max(mejor_global, len(buenas))
+                        if mejor_global >= COINCIDENCIAS_MINIMAS:
+                            encontrado = True
+                            break
+                except Exception as e:
+                    print("Aviso: error en deteccion del cubo ({}).".format(e))
+                    break
+                time.sleep(0.1)
+            if encontrado:
+                break
     finally:
         try:
             video.unsubscribe(suscripcion)
         except Exception:
             pass
+        if motion:
+            try:
+                motion.setAngles("HeadPitch", 0.0, 0.2)
+            except Exception:
+                pass
 
-    print("[CUBO] No se detecto el cubo en {} s (mejor coincidencia: {}).".format(
-        timeout, mejor_global))
-    return False
+    if encontrado:
+        print("[CUBO] Cubo detectado ({} coincidencias).".format(mejor_global))
+    else:
+        print("[CUBO] No se detecto el cubo (mejor coincidencia: {}).".format(mejor_global))
+    return encontrado

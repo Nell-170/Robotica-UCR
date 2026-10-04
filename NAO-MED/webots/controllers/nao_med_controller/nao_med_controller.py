@@ -22,6 +22,10 @@ except ImportError:
 
 PUERTO_ESCUCHA = 9000
 
+# Inclinaciones de cabeza (rad) que barre el robot buscando el cubo.
+INCLINACIONES_CABEZA = (0.0, 0.35, 0.5, -0.3, -0.6)
+SEGUNDOS_POR_INCLINACION = 2.0
+
 # Frases que dice el NAO segun el resultado de la deteccion de rostro
 # (mismo texto que usa el robot fisico en nao_controller.py).
 FRASE_ROSTRO_DETECTADO = "Te veo, que tengas un buen dia."
@@ -52,6 +56,7 @@ class NAOMedController(object):
             "left_eye": self._get_device_seguro("Face/Led/Left"),
             "right_eye": self._get_device_seguro("Face/Led/Right"),
         }
+        self.cabeza = self._get_device_seguro("HeadPitch")
         self.motion_caminar = None
         if os.path.exists(RUTA_MOTION_CAMINAR):
             self.motion_caminar = Motion(RUTA_MOTION_CAMINAR)
@@ -195,51 +200,55 @@ class NAOMedController(object):
         print("[WEBOTS] No se detecto ningun rostro en {} segundos".format(timeout))
         return False
 
-    def detectar_cubo(self, timeout=8.0):
-        """Busca el cubo en la cámara usando coincidencias ORB."""
+    def _inclinar_cabeza(self, angulo):
+        """Mueve la cabeza (HeadPitch) y deja pasar unos pasos de simulacion."""
+        if self.cabeza:
+            self.cabeza.setPosition(angulo)
+            self._esperar(0.8)
+
+    def detectar_cubo(self):
+        """Busca el cubo barriendo la cabeza arriba y abajo (ORB)."""
         if not self.camera or not self.cubo_orb or not self.cubo_descriptores:
             print("[WEBOTS] Detector del cubo no disponible")
             return False
 
         matcher = cv2.BFMatcher(cv2.NORM_HAMMING)
-        inicio = time.time()
         mejor_global = 0
-        frames_recibidos = 0
-        while time.time() - inicio < timeout:
-            image_data = self.camera.getImage()
-            if image_data:
-                try:
-                    frames_recibidos += 1
-                    width = self.camera.getWidth()
-                    height = self.camera.getHeight()
-                    rgba = np.frombuffer(image_data, dtype=np.uint8).reshape((height, width, 4))
-                    image_bgr = rgba[:, :, [2, 1, 0]]
-                    gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
-                    _, descriptores = self.cubo_orb.detectAndCompute(gray, None)
+        encontrado = False
+        for inclinacion in INCLINACIONES_CABEZA:
+            self._inclinar_cabeza(inclinacion)
+            inicio = time.time()
+            while time.time() - inicio < SEGUNDOS_POR_INCLINACION:
+                image_data = self.camera.getImage()
+                if image_data:
+                    try:
+                        width = self.camera.getWidth()
+                        height = self.camera.getHeight()
+                        rgba = np.frombuffer(image_data, dtype=np.uint8).reshape((height, width, 4))
+                        gray = cv2.cvtColor(rgba[:, :, [2, 1, 0]], cv2.COLOR_BGR2GRAY)
+                        _, descriptores = self.cubo_orb.detectAndCompute(gray, None)
+                        if descriptores is not None:
+                            for referencia in self.cubo_descriptores:
+                                pares = matcher.knnMatch(referencia, descriptores, k=2)
+                                buenas = [par[0] for par in pares
+                                          if len(par) == 2 and par[0].distance < 0.75 * par[1].distance]
+                                mejor_global = max(mejor_global, len(buenas))
+                        if mejor_global >= 8:
+                            encontrado = True
+                            break
+                    except Exception as e:
+                        print("[WEBOTS] Error en deteccion del cubo: {}".format(e))
+                if self.robot.step(self.timestep) == -1:
+                    return False
+            if encontrado:
+                break
 
-                    mejor = 0
-                    if descriptores is not None:
-                        for referencia in self.cubo_descriptores:
-                            pares = matcher.knnMatch(referencia, descriptores, k=2)
-                            buenas = [par[0] for par in pares
-                                      if len(par) == 2 and par[0].distance < 0.75 * par[1].distance]
-                            mejor = max(mejor, len(buenas))
-
-                    mejor_global = max(mejor_global, mejor)
-
-                    if mejor >= 8:
-                        print("[WEBOTS] Cubo detectado ({} coincidencias)".format(mejor))
-                        return True
-                except Exception as e:
-                    print("[WEBOTS] Error en deteccion del cubo: {}".format(e))
-
-            if self.robot.step(self.timestep) == -1:
-                return False
-
-        print("[WEBOTS] No se detecto el cubo en {} segundos (mejor coincidencia: {})".format(
-            timeout, mejor_global))
-        print("[WEBOTS] Frames recibidos: {}".format(frames_recibidos))
-        return False
+        self._inclinar_cabeza(0.0)
+        if encontrado:
+            print("[WEBOTS] Cubo detectado ({} coincidencias)".format(mejor_global))
+        else:
+            print("[WEBOTS] No se detecto el cubo (mejor coincidencia: {})".format(mejor_global))
+        return encontrado
 
     def ejecutar_notificacion(self, medicamento):
         print("[WEBOTS] === NOTIFICACION DE MEDICAMENTO ===")
