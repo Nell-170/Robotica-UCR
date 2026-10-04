@@ -34,6 +34,11 @@ RUTA_MOTION_CAMINAR = os.path.join(
     "motions", "Forwards50.motion"
 )
 
+RUTA_REFERENCIAS_CUBO = os.path.normpath(os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "..", "..", "..", "data", "cubo_referencias"
+))
+
 
 class NAOMedController(object):
     def __init__(self):
@@ -53,7 +58,7 @@ class NAOMedController(object):
         else:
             print("[WEBOTS] Aviso: no se encontro el archivo de movimiento {}".format(RUTA_MOTION_CAMINAR))
 
-        # Camara del Nao para deteccion de rostros
+        # Camara del Nao (rostros y cubo)
         self.camera = self._get_device_seguro("CameraTop")
         if self.camera:
             self.camera.enable(self.timestep)
@@ -68,6 +73,23 @@ class NAOMedController(object):
                 self.face_cascade = None
         else:
             print("[WEBOTS] Aviso: OpenCV no disponible, deteccion de rostros deshabilitada")
+
+        # Detector del cubo: usa las tres vistas de referencia.
+        self.cubo_orb = None
+        self.cubo_descriptores = []
+        if OPENCV_DISPONIBLE:
+            self.cubo_orb = cv2.ORB_create(nfeatures=1200)
+            for nombre in ("cubo.jpg", "cubo2.jpg", "cubo3.jpg"):
+                ruta = os.path.join(RUTA_REFERENCIAS_CUBO, nombre)
+                referencia = cv2.imread(ruta, cv2.IMREAD_GRAYSCALE)
+                if referencia is None:
+                    print("[WEBOTS] Aviso: no se pudo cargar referencia del cubo: {}".format(ruta))
+                    continue
+                _, descriptores = self.cubo_orb.detectAndCompute(referencia, None)
+                if descriptores is not None:
+                    self.cubo_descriptores.append(descriptores)
+            print("[WEBOTS] Referencias del cubo cargadas: {}".format(
+                len(self.cubo_descriptores)))
 
         # El Nao de Webots no tiene un dispositivo de audio/TTS: no existe
         # forma de que "hable" con sonido dentro del simulador, asi que la
@@ -173,12 +195,67 @@ class NAOMedController(object):
         print("[WEBOTS] No se detecto ningun rostro en {} segundos".format(timeout))
         return False
 
+    def detectar_cubo(self, timeout=8.0):
+        """Busca el cubo en la cámara usando coincidencias ORB."""
+        if not self.camera or not self.cubo_orb or not self.cubo_descriptores:
+            print("[WEBOTS] Detector del cubo no disponible")
+            return False
+
+        matcher = cv2.BFMatcher(cv2.NORM_HAMMING)
+        inicio = time.time()
+        mejor_global = 0
+        frames_recibidos = 0
+        while time.time() - inicio < timeout:
+            image_data = self.camera.getImage()
+            if image_data:
+                try:
+                    frames_recibidos += 1
+                    width = self.camera.getWidth()
+                    height = self.camera.getHeight()
+                    rgba = np.frombuffer(image_data, dtype=np.uint8).reshape((height, width, 4))
+                    image_bgr = rgba[:, :, [2, 1, 0]]
+                    gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
+                    _, descriptores = self.cubo_orb.detectAndCompute(gray, None)
+
+                    mejor = 0
+                    if descriptores is not None:
+                        for referencia in self.cubo_descriptores:
+                            pares = matcher.knnMatch(referencia, descriptores, k=2)
+                            buenas = [par[0] for par in pares
+                                      if len(par) == 2 and par[0].distance < 0.75 * par[1].distance]
+                            mejor = max(mejor, len(buenas))
+
+                    mejor_global = max(mejor_global, mejor)
+
+                    if mejor >= 8:
+                        print("[WEBOTS] Cubo detectado ({} coincidencias)".format(mejor))
+                        return True
+                except Exception as e:
+                    print("[WEBOTS] Error en deteccion del cubo: {}".format(e))
+
+            if self.robot.step(self.timestep) == -1:
+                return False
+
+        print("[WEBOTS] No se detecto el cubo en {} segundos (mejor coincidencia: {})".format(
+            timeout, mejor_global))
+        print("[WEBOTS] Frames recibidos: {}".format(frames_recibidos))
+        return False
+
     def ejecutar_notificacion(self, medicamento):
         print("[WEBOTS] === NOTIFICACION DE MEDICAMENTO ===")
         print("[WEBOTS] Medicamento: {}".format(medicamento))
 
         self.reproducir_alarma(2)
         self.encender_luces()
+
+        # El cubo representa la medicina: solo se informa si se encontro,
+        # y el flujo continua igual en ambos casos.
+        if self.detectar_cubo():
+            print("[WEBOTS] Cubo detectado.")
+            self.decir("Cubo detectado")
+        else:
+            print("[WEBOTS] Cubo no detectado.")
+            self.decir("Cubo no detectado")
 
         # La deteccion de rostro es la que activa el movimiento:
         # solo camina y notifica si ve a alguien frente al robot.
