@@ -245,7 +245,8 @@ class NAOMedController(object):
 
         self._inclinar_cabeza(0.0)
         if encontrado:
-            print("[WEBOTS] Cubo detectado ({} coincidencias)".format(mejor_global))
+            print("[WEBOTS] Cubo detectado ({} coincidencias, inclinacion de cabeza {} rad)".format(
+                mejor_global, inclinacion))
         else:
             print("[WEBOTS] No se detecto el cubo (mejor coincidencia: {})".format(mejor_global))
         return encontrado
