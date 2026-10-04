@@ -5,7 +5,7 @@ Controlador de acciones del NAO para NAO-Med.
 Secuencia al detectar que es hora de un medicamento:
     1. Sonido de alarma (~2 segundos)
     2. Luces LED de los ojos encendidas
-    3. Reconocimiento de rostro: espera a ver a alguien frente al robot
+    3. Deteccion del cubo (solo informa) y reconocimiento de rostro: espera a ver a alguien frente al robot
     4. Solo si detecta a una persona, camina en linea recta hacia el
        frente y dice la frase de notificacion del medicamento
     5. Si no detecta a nadie, el robot NO camina: solo dice que no ve
@@ -26,6 +26,7 @@ except ImportError:
     from naoqi_mock import ALProxy
 
 from reconocimiento import reconocer_rostro
+from deteccion_cubo import detectar_cubo
 
 # Distancia (en metros) que camina el NAO en linea recta hacia el frente
 DISTANCIA_CAMINATA_METROS = 1.0
@@ -102,7 +103,7 @@ def _decir_frase(ip, puerto, medicamento):
 def notificar_medicamento(config, medicamento):
     """
     Ejecuta la secuencia completa de notificacion en el NAO:
-    alarma -> luces -> caminar -> hablar.
+    alarma -> luces -> cubo -> rostro -> caminar -> hablar.
 
     'config' es el dict retornado por robot_connector (ip, port, type).
     
@@ -121,6 +122,15 @@ def notificar_medicamento(config, medicamento):
         # Usar NAOqi para robot real
         _reproducir_alarma(ip, puerto)
         _encender_luces(ip, puerto)
+
+        # El cubo representa la medicina: solo se informa si se encontro,
+        # y el flujo continua igual en ambos casos.
+        if detectar_cubo(ip, puerto):
+            print("[NAO-MED] Cubo detectado.")
+            _decir(ip, puerto, "Cubo detectado")
+        else:
+            print("[NAO-MED] Cubo no detectado.")
+            _decir(ip, puerto, "Cubo no detectado")
 
         # La deteccion de rostro es la que activa el movimiento:
         # solo camina y notifica si ve a alguien frente al robot.
