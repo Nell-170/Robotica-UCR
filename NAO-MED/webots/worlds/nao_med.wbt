@@ -33,6 +33,12 @@ WorldInfo {
       ]
     }
     ContactProperties {
+      material1 "cubo"
+      coulombFriction [
+        2
+      ]
+    }
+    ContactProperties {
       material1 "NAO foot material"
       coulombFriction [
         7
@@ -139,8 +145,14 @@ Table {
   rotation 0 0 1 1.5708
   size 0.6 0.8 0.3
 }
+Table {
+  translation -0.95 0.998 0
+  name "mesa_cubo"
+  size 0.3 0.3 0.3
+}
 Solid {
-  translation -0.95 0.998 0.325
+  translation -0.95 0.998 0.326
+  contactMaterial "cubo"
   children [
     Shape {
       appearance PBRAppearance {
@@ -156,6 +168,14 @@ Solid {
       }
     }
   ]
+  name "cubo"
+  boundingObject Box {
+    size 0.05 0.05 0.05
+  }
+  physics Physics {
+    density -1
+    mass 0.05
+  }
 }
 Solid {
   translation -0.5 1.4 0.5
