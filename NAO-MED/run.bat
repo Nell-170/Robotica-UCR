@@ -8,6 +8,7 @@ REM                         real o abre Webots automaticamente)
 REM   run.bat test       -> Prueba rapida: dispara una notificacion
 REM                         de inmediato, sin esperar el cronograma
 REM   run.bat schedule   -> Solo muestra el cronograma cargado
+REM   run.bat setup      -> Instala OpenCV para Webots (solo simulador)
 REM ============================================================
 REM Nota sobre Python 2.7: el SDK de NAOqi solo funciona con Python
 REM 2.7, no con Python 3. Este script busca automaticamente una
@@ -20,6 +21,8 @@ REM   set NAOMED_PYTHON27=D:\herramientas\Python27\python.exe
 REM ============================================================
 
 setlocal enabledelayedexpansion
+
+if "%1"=="setup" goto :setup
 
 set SCRIPT_DIR=%~dp0src
 set PYTHON27=
@@ -67,12 +70,19 @@ echo [NAO-Med] Cronograma actual:
 "%PYTHON27%" schedule.py
 goto :eof
 
+:setup
+echo [NAO-Med] Instalando OpenCV para el simulador Webots en webots\libs ...
+python -m pip install --no-deps --target "%~dp0webots\libs" "opencv-python==4.11.0.86"
+echo [NAO-Med] Requiere numpy en el Python 3 que usa Webots: python -m pip install numpy
+goto :eof
+
 :help
-echo Uso: run.bat [start^|test^|schedule]
+echo Uso: run.bat [start^|test^|schedule^|setup]
 echo.
 echo   start      Inicia el monitor completo de medicamentos
 echo   test       Dispara una notificacion de prueba de inmediato
 echo   schedule   Muestra el cronograma cargado desde el CSV
+echo   setup      Instala OpenCV para el simulador Webots ^(solo simulador^)
 exit /b 1
 
 REM ------------------------------------------------------------
