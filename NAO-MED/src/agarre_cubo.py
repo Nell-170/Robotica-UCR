@@ -26,7 +26,7 @@ try:
 except ImportError:
     OPENCV_DISPONIBLE = False
 
-CAMARA_SUPERIOR = 0
+CAMARA_INFERIOR = 1
 RESOLUCION_QVGA = 1
 ESPACIO_BGR = 13
 FPS_CAMARA = 10
@@ -63,7 +63,7 @@ class _Agarre(object):
         self.memoria = ALProxy("ALMemory", ip, puerto)
         self.video = ALProxy("ALVideoDevice", ip, puerto)
         self.suscripcion = self.video.subscribeCamera(
-            "NaoMed_Agarre", CAMARA_SUPERIOR, RESOLUCION_QVGA, ESPACIO_BGR, FPS_CAMARA)
+            "NaoMed_Agarre", CAMARA_INFERIOR, RESOLUCION_QVGA, ESPACIO_BGR, FPS_CAMARA)
         self.cubo_ancho = 0.0
         self.motion.setStiffnesses("Head", 1.0)
         self.motion.setStiffnesses("LArm", 1.0)
@@ -85,7 +85,7 @@ class _Agarre(object):
         if not frame:
             return None
         w, h, capas = frame[0], frame[1], frame[2]
-        imagen = np.frombuffer(bytes(frame[6]), dtype=np.uint8).reshape((h, w, capas))
+        imagen = np.frombuffer(frame[6], dtype=np.uint8).reshape((h, w, capas))
         hsv = cv2.cvtColor(imagen, cv2.COLOR_BGR2HSV)
         claro = ((hsv[:, :, 1] < 60) & (hsv[:, :, 2] > 130)).astype(np.uint8)
         oscuro = hsv[:, :, 2] < 70
