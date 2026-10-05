@@ -41,6 +41,9 @@ SEGUNDOS_POR_INCLINACION = 2.0
 # Acercamiento al cubo guiado por la camara (lazo cerrado).
 INCLINACION_ACERCAMIENTO = 0.4
 MAX_PASOS_ACERCAMIENTO = 12
+# Distancia (m) del sonar a la mesa a la que los brazos ya alcanzan el cubo.
+DISTANCIA_SONAR_AGARRE = 0.35
+SONAR_SIN_ECO = 2.0
 # Cierre de brazos: avance de ShoulderRoll por paso y diferencia (rad) entre
 # lo ordenado y lo medido que se toma como contacto con el cubo.
 PASO_CIERRE = 0.04
@@ -104,6 +107,10 @@ class NAOMedController(object):
                 sensor = motor.getPositionSensor()
                 if sensor:
                     sensor.enable(self.timestep)
+        self.sonares = [self._get_device_seguro("Sonar/Left"), self._get_device_seguro("Sonar/Right")]
+        for sonar in self.sonares:
+            if sonar:
+                sonar.enable(self.timestep)
         self.motion_paso = Motion(RUTA_MOTION_PASO) if os.path.exists(RUTA_MOTION_PASO) else None
         self.motion_lado_izq = Motion(RUTA_MOTION_LADO_IZQ) if os.path.exists(RUTA_MOTION_LADO_IZQ) else None
         self.motion_lado_der = Motion(RUTA_MOTION_LADO_DER) if os.path.exists(RUTA_MOTION_LADO_DER) else None
@@ -393,6 +400,11 @@ class NAOMedController(object):
                 return True
         return False
 
+    def _distancia_sonar(self):
+        """Menor distancia (m) que ven los sonares, o None si no hay lectura."""
+        lecturas = [s.getValue() for s in self.sonares if s and s.getValue() < SONAR_SIN_ECO]
+        return min(lecturas) if lecturas else None
+
     def _esperar_brazos_quietos(self, maximo=2.0):
         """Espera a que los brazos dejen de moverse (o se agote el tiempo)."""
         previo = None
@@ -456,6 +468,11 @@ class NAOMedController(object):
                     break
                 print("[WEBOTS] Ancho del cubo: {:.2f} (meta {:.2f})".format(
                     self.cubo_ancho, ANCHO_CUBO_AGARRE))
+                sonar = self._distancia_sonar()
+                print("[WEBOTS] Sonar: {}".format("sin lectura" if sonar is None else "{:.2f} m".format(sonar)))
+                if sonar is not None and sonar <= DISTANCIA_SONAR_AGARRE:
+                    print("[WEBOTS] A {:.2f} m del cubo: me detengo.".format(sonar))
+                    break
                 if self.cubo_ancho >= ANCHO_CUBO_AGARRE:
                     print("[WEBOTS] Cubo al alcance.")
                     break
