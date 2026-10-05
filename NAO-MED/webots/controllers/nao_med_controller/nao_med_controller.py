@@ -41,7 +41,7 @@ SEGUNDOS_POR_INCLINACION = 2.0
 # Acercamiento al cubo guiado por la camara (lazo cerrado).
 INCLINACION_ACERCAMIENTO = 0.4
 MAX_PASOS_ACERCAMIENTO = 12
-# Distancia (m) del sonar a la mesa a la que los brazos ya alcanzan el cubo.
+# Distancia (m) maxima al obstaculo del sonar para considerar el agarre.
 DISTANCIA_SONAR_AGARRE = 0.35
 SONAR_SIN_ECO = 2.0
 # Cierre de brazos: avance de ShoulderRoll por paso y diferencia (rad) entre
@@ -402,7 +402,8 @@ class NAOMedController(object):
 
     def _distancia_sonar(self):
         """Menor distancia (m) que ven los sonares, o None si no hay lectura."""
-        lecturas = [s.getValue() for s in self.sonares if s and s.getValue() < SONAR_SIN_ECO]
+        lecturas = [s.getValue() for s in self.sonares
+                    if s and 0.0 < s.getValue() < SONAR_SIN_ECO]
         return min(lecturas) if lecturas else None
 
     def _esperar_brazos_quietos(self, maximo=2.0):
@@ -462,7 +463,8 @@ class NAOMedController(object):
         self._inclinar_cabeza(INCLINACION_ACERCAMIENTO)
         pasos = 0
         for intento in range(INTENTOS_AGARRE):
-            while pasos < MAX_PASOS_ACERCAMIENTO:
+            al_alcance = False
+            while True:
                 if not self._ver_cubo_o_buscar(pasos):
                     print("[WEBOTS] Perdi el cubo de vista: no sigo caminando.")
                     break
@@ -471,14 +473,20 @@ class NAOMedController(object):
                 sonar = self._distancia_sonar()
                 print("[WEBOTS] Sonar: {}".format("sin lectura" if sonar is None else "{:.2f} m".format(sonar)))
                 if sonar is not None and sonar <= DISTANCIA_SONAR_AGARRE:
-                    print("[WEBOTS] A {:.2f} m del cubo: me detengo.".format(sonar))
+                    print("[WEBOTS] Obstaculo a {:.2f} m: me detengo.".format(sonar))
+                    if self.cubo_ancho >= ANCHO_CUBO_AGARRE:
+                        al_alcance = True
+                    else:
+                        print("[WEBOTS] El sonar detecta algo cerca, pero el cubo aun no parece al alcance.")
                     break
-                if self.cubo_ancho >= ANCHO_CUBO_AGARRE:
-                    print("[WEBOTS] Cubo al alcance.")
+                if pasos >= MAX_PASOS_ACERCAMIENTO:
                     break
                 self._centrar_cubo()
                 self._dar_paso()
                 pasos += 1
+            if not al_alcance:
+                print("[WEBOTS] No confirme que el cubo este al alcance: cancelo el agarre.")
+                break
             print("[WEBOTS] Intento de agarre {}...".format(intento + 1))
             roll = self._cerrar_hasta_contacto()
             if roll is not None:

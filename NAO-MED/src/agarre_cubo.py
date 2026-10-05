@@ -178,7 +178,8 @@ class _Agarre(object):
         time.sleep(1.0)
         pasos = 0
         for intento in range(INTENTOS_AGARRE):
-            while pasos < MAX_PASOS_ACERCAMIENTO:
+            al_alcance = False
+            while True:
                 ubic = self._ver_cubo_o_buscar()
                 if not ubic:
                     print("[CUBO] Perdi el cubo de vista: no sigo caminando.")
@@ -188,13 +189,19 @@ class _Agarre(object):
                     self.cubo_ancho, ANCHO_CUBO_AGARRE,
                     "sin lectura" if sonar is None else "{:.2f} m".format(sonar)))
                 if sonar is not None and sonar <= DISTANCIA_SONAR_AGARRE:
-                    print("[CUBO] A {:.2f} m del cubo: me detengo.".format(sonar))
+                    print("[CUBO] Obstaculo a {:.2f} m: me detengo.".format(sonar))
+                    if self.cubo_ancho >= ANCHO_CUBO_AGARRE:
+                        al_alcance = True
+                    else:
+                        print("[CUBO] El sonar detecta algo cerca, pero el cubo aun no parece al alcance.")
                     break
-                if self.cubo_ancho >= ANCHO_CUBO_AGARRE:
-                    print("[CUBO] Cubo al alcance.")
+                if pasos >= MAX_PASOS_ACERCAMIENTO:
                     break
                 self._centrar_y_avanzar(ubic[0])
                 pasos += 1
+            if not al_alcance:
+                print("[CUBO] No confirme que el cubo este al alcance: cancelo el agarre.")
+                break
             print("[CUBO] Intento de agarre {}...".format(intento + 1))
             roll = self._cerrar_hasta_contacto()
             if roll is not None:
