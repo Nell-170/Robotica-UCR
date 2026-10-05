@@ -27,6 +27,7 @@ except ImportError:
 
 from reconocimiento import reconocer_rostro
 from deteccion_cubo import detectar_cubo
+from agarre_cubo import agarrar_cubo
 
 # Distancia (en metros) que camina el NAO en linea recta hacia el frente
 DISTANCIA_CAMINATA_METROS = 1.0
@@ -39,7 +40,7 @@ COLOR_LUCES_NOTIFICACION = 0x00A2FF  # azul, para llamar la atencion
 
 # Frases que dice el NAO segun el resultado de la deteccion de rostro
 FRASE_ROSTRO_DETECTADO = "Te veo, que tengas un buen dia."
-FRASE_ROSTRO_NO_DETECTADO = "No veo a nadie, por favor acercate."
+FRASE_ROSTRO_NO_DETECTADO = "No veo a nadie."
 
 
 def _reproducir_alarma(ip, puerto):
@@ -128,6 +129,10 @@ def notificar_medicamento(config, medicamento):
         if detectar_cubo(ip, puerto):
             print("[NAO-MED] Cubo detectado.")
             _decir(ip, puerto, "Cubo detectado")
+            if agarrar_cubo(ip, puerto):
+                print("[NAO-MED] Cubo agarrado.")
+            else:
+                print("[NAO-MED] No se pudo agarrar el cubo.")
         else:
             print("[NAO-MED] Cubo no detectado.")
             _decir(ip, puerto, "Cubo no detectado")
