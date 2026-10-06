@@ -88,7 +88,7 @@ ANCHO_CUBO_AGARRE = 0.20
 # esta a 0.1265 m sobre la base del robot. El fov se aproxima a 1.0 rad
 # (el modelo usa 1.064). Es una aproximacion: la homografia resultante
 # sirve para estimar la distancia al cubo, no es exacta.
-FOV_CAMARA_APROX = 1.0
+FOV_CAMARA_APROX = 1.064
 POS_CAMARA_EN_CABEZA = (0.05871, 0.0, 0.06364)
 INCLINACION_CAMARA_CABEZA = 0.020946
 ALTURA_CABEZA = 0.1265
