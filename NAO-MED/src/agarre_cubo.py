@@ -26,7 +26,7 @@ try:
 except ImportError:
     OPENCV_DISPONIBLE = False
 
-from calibracion_piso import cargar_calibracion, pixel_a_piso
+from calibracion_plano import cargar_calibracion, pixel_a_plano
 
 CAMARA_INFERIOR = 1
 RESOLUCION_QVGA = 1
@@ -151,7 +151,7 @@ class _Agarre(object):
             return None
         x_pixel = ubic[0] * self.ancho_imagen
         y_pixel = ubic[1] * self.alto_imagen
-        resultado = pixel_a_piso(self.matriz_piso, x_pixel, y_pixel)
+        resultado = pixel_a_plano(self.matriz_piso, x_pixel, y_pixel)
         if resultado is None:
             return None
         return resultado[0]
