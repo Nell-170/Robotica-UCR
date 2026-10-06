@@ -150,7 +150,7 @@ Table {
   name "mesa_cubo"
   size 0.3 0.3 0.3
 }
-Solid {
+DEF cubo Solid {
   translation -0.95 0.998 0.326
   contactMaterial "cubo"
   children [
@@ -212,6 +212,7 @@ WoodenChair {
 Nao {
   translation -1.74563 0.997971 0.34
   controller "nao_med_controller"
+  supervisor TRUE
   cameraWidth 320
   cameraHeight 240
 }

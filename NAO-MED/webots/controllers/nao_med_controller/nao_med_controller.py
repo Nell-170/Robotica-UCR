@@ -13,7 +13,7 @@ import socket
 import time
 import numpy as np
 
-from controller import Robot, Motion
+from controller import Robot, Motion, Supervisor
 
 try:
     import cv2
@@ -44,6 +44,8 @@ MAX_PASOS_ACERCAMIENTO = 12
 MAX_PASOS_SIN_SONAR = 3  # maximo de pasos sin lectura del sonar
 # Distancia (m) maxima al obstaculo del sonar para considerar el agarre.
 DISTANCIA_SONAR_AGARRE = 0.35
+# Distancia (m) al frente del cubo (homografia del plano) para considerarlo al alcance.
+DISTANCIA_AGARRE_METROS = 0.35
 SONAR_SIN_ECO = 2.0
 # Cierre de brazos: avance de ShoulderRoll por paso y diferencia (rad) entre
 # lo ordenado y lo medido que se toma como contacto con el cubo.
@@ -80,6 +82,17 @@ RUTA_MOTION_LADO_DER = os.path.join(os.path.dirname(RUTA_MOTION_CAMINAR), "SideS
 BANDA_CENTRADO = 0.12
 ANCHO_CUBO_AGARRE = 0.20
 
+# Modelo aproximado de la camara superior del Nao de Webots para la
+# homografia del plano (valores del modelo Nao.proto): la camara esta en
+# la cabeza, inclinada 0.020946 rad hacia abajo, y el origen de la cabeza
+# esta a 0.1265 m sobre la base del robot. El fov se aproxima a 1.0 rad
+# (el modelo usa 1.064). Es una aproximacion: la homografia resultante
+# sirve para estimar la distancia al cubo, no es exacta.
+FOV_CAMARA_APROX = 1.0
+POS_CAMARA_EN_CABEZA = (0.05871, 0.0, 0.06364)
+INCLINACION_CAMARA_CABEZA = 0.020946
+ALTURA_CABEZA = 0.1265
+
 RUTA_REFERENCIAS_CUBO = os.path.normpath(os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
     "..", "..", "..", "data", "cubo_referencias"
@@ -88,7 +101,11 @@ RUTA_REFERENCIAS_CUBO = os.path.normpath(os.path.join(
 
 class NAOMedController(object):
     def __init__(self):
-        self.robot = Robot()
+        # Un solo objeto: Supervisor hereda de Robot y ademas permite leer la
+        # posicion real del cubo y del robot (el mundo marca el Nao como
+        # supervisor). Robot solo admite una instancia por proceso, asi que no
+        # se puede crear un Robot y un Supervisor a la vez.
+        self.robot = Supervisor()
         self.timestep = int(self.robot.getBasicTimeStep())
 
         # Nombres reales de los dispositivos del modelo Nao de Webots
@@ -127,6 +144,8 @@ class NAOMedController(object):
         if self.camera:
             self.camera.enable(self.timestep)
         self.cubo_ancho = 0.0
+        self.matriz_plano = None
+        self.inclinacion_plano = None
         self.camara_baja = self._get_device_seguro("CameraBottom")
         if self.camara_baja:
             self.camara_baja.enable(self.timestep)
@@ -387,7 +406,8 @@ class NAOMedController(object):
 
     def _ver_cubo_o_buscar(self, numero):
         """Guarda una captura y comprueba que el cubo siga en la imagen; si no,
-        prueba otras inclinaciones de cabeza. Deja la cabeza donde lo vio."""
+        prueba otras inclinaciones de cabeza. Deja la cabeza donde lo vio.
+        Devuelve (x, y) relativos del cubo, o None si no lo ve."""
         for inclinacion in (INCLINACION_ACERCAMIENTO, 0.2, 0.0, 0.6):
             self._inclinar_cabeza(inclinacion)
             ubic = self._ubicar_cubo_estable(8)
@@ -398,14 +418,110 @@ class NAOMedController(object):
                     self.camara_baja.saveImage(ruta.replace("paso", "bajo"), 90)
                 print("[WEBOTS] Cubo visto en x={:.2f} y={:.2f} (cabeza {}), captura {}".format(
                     ubic[0], ubic[1], inclinacion, ruta))
-                return True
-        return False
+                return ubic
+        return None
 
     def _distancia_sonar(self):
         """Menor distancia (m) que ven los sonares, o None si no hay lectura."""
         lecturas = [s.getValue() for s in self.sonares
                     if s and 0.0 < s.getValue() < SONAR_SIN_ECO]
         return min(lecturas) if lecturas else None
+
+    def _calibrar_homografia_webots(self):
+        """Calcula la homografia del plano de la mesa (pixel -> metros sobre el
+        plano) usando la posicion real del cubo y un modelo aproximado de la
+        camara superior. Guarda la matriz en self.matriz_plano."""
+        if not OPENCV_DISPONIBLE:
+            print("[WEBOTS] OpenCV no disponible: sin homografia del plano.")
+            return
+        try:
+            nodo_cubo = self.robot.getFromDef("cubo")
+            if nodo_cubo is None:
+                print("[WEBOTS] Aviso: no existe el nodo 'cubo': sin homografia del plano.")
+                return
+            pos_cubo = nodo_cubo.getField("translation").getSFVec3f()
+            nodo_robot = self.robot.getSelf()
+            pos_robot = nodo_robot.getPosition()
+            orientacion = nodo_robot.getOrientation()
+        except Exception as e:
+            print("[WEBOTS] Aviso: no se pudo leer la posicion del cubo ({}).".format(e))
+            return
+
+        # Ejes locales del robot en el mundo (matriz de orientacion por filas).
+        # El Nao mira hacia su eje X local; su eje Y local es su izquierda.
+        adelante = np.array([orientacion[0], orientacion[3], orientacion[6]])
+        izquierda = np.array([orientacion[1], orientacion[4], orientacion[7]])
+        arriba = np.array([orientacion[2], orientacion[5], orientacion[8]])
+
+        # Posicion del cubo respecto al robot: al frente y a la izquierda.
+        vector = np.array(pos_cubo) - np.array(pos_robot)
+        adelante_cubo = float(np.dot(vector, adelante))
+        lateral_cubo = float(np.dot(vector, izquierda))
+
+        # El plano es la superficie de la mesa: el cubo (5 cm) esta centrado
+        # 2.5 cm por encima de ella.
+        z_plano_rel = (pos_cubo[2] - 0.025) - pos_robot[2]
+
+        # 4 puntos del plano: un cuadrado de 0.4 m de lado centrado en el cubo.
+        puntos_plano = []
+        puntos_pixel = []
+        for da in (-0.2, 0.2):
+            for dl in (-0.2, 0.2):
+                adelante_p = adelante_cubo + da
+                lateral_p = lateral_cubo + dl
+                p_robot = adelante_p * adelante + lateral_p * izquierda + z_plano_rel * arriba
+                pixel = self._proyectar_a_pixel(p_robot)
+                if pixel is None:
+                    print("[WEBOTS] Aviso: un punto del plano quedo fuera de la imagen: sin homografia.")
+                    return
+                puntos_plano.append((adelante_p, lateral_p))
+                puntos_pixel.append(pixel)
+
+        self.matriz_plano = cv2.getPerspectiveTransform(
+            np.array(puntos_pixel, dtype=np.float32),
+            np.array(puntos_plano, dtype=np.float32))
+        self.inclinacion_plano = INCLINACION_ACERCAMIENTO
+        print("[WEBOTS] Homografia del plano calibrada (cubo a {:.2f} m al frente, {:.2f} m lateral).".format(
+            adelante_cubo, lateral_cubo))
+
+    def _proyectar_a_pixel(self, p_robot):
+        """Proyecta un punto del marco del robot a un pixel de la camara superior
+        con un modelo aproximado (cv2.projectPoints). None si queda fuera de la imagen."""
+        pitch_cabeza = INCLINACION_ACERCAMIENTO
+        pitch_camara = INCLINACION_ACERCAMIENTO + INCLINACION_CAMARA_CABEZA
+        c1, s1 = np.cos(pitch_cabeza), np.sin(pitch_cabeza)
+        c2, s2 = np.cos(pitch_camara), np.sin(pitch_camara)
+        r_cabeza = np.array([[c1, 0.0, s1], [0.0, 1.0, 0.0], [-s1, 0.0, c1]])
+        r_cam = np.array([[c2, 0.0, s2], [0.0, 1.0, 0.0], [-s2, 0.0, c2]])
+        centro = np.array([0.0, 0.0, ALTURA_CABEZA]) + np.dot(r_cabeza, np.array(POS_CAMARA_EN_CABEZA))
+        # La camara de Webots mira +X, con +Y a la izquierda y +Z arriba; el
+        # marco de OpenCV mira +Z, con +X a la derecha y +Y abajo.
+        r_conv = np.array([[0.0, -1.0, 0.0], [0.0, 0.0, -1.0], [1.0, 0.0, 0.0]])
+        r_cv = np.dot(r_conv, r_cam.T)
+        t_cv = -np.dot(r_cv, centro)
+        ancho = self.camera.getWidth()
+        alto = self.camera.getHeight()
+        focal = 0.5 * ancho / np.tan(0.5 * FOV_CAMARA_APROX)
+        k = np.array([[focal, 0.0, ancho / 2.0], [0.0, focal, alto / 2.0], [0.0, 0.0, 1.0]])
+        rvec = cv2.Rodrigues(r_cv)[0]
+        puntos, _ = cv2.projectPoints(np.array([p_robot], dtype=np.float64), rvec, t_cv, k, None)
+        u, v = puntos[0][0]
+        if not (0.0 <= u < ancho and 0.0 <= v < alto):
+            return None
+        return u, v
+
+    def _distancia_por_homografia(self, ubic):
+        """Distancia al frente (m) del cubo segun la homografia del plano, o None."""
+        if self.matriz_plano is None:
+            return None
+        x_pixel = ubic[0] * self.camera.getWidth()
+        y_pixel = ubic[1] * self.camera.getHeight()
+        vector = np.array([x_pixel, y_pixel, 1.0], dtype=np.float64)
+        resultado = np.dot(self.matriz_plano, vector)
+        w = resultado[2]
+        if abs(w) < 1e-6:
+            return None
+        return float(resultado[0] / w)
 
     def _esperar_brazos_quietos(self, maximo=2.0):
         """Espera a que los brazos dejen de moverse (o se agote el tiempo)."""
@@ -462,18 +578,27 @@ class NAOMedController(object):
         ambas manos (verificando contacto) y lo levanta. True si lo tiene."""
         self._poner_brazos(POSE_ABIERTA["ShoulderPitch"], POSE_ABIERTA["ShoulderRoll"])
         self._inclinar_cabeza(INCLINACION_ACERCAMIENTO)
+        self._calibrar_homografia_webots()
         pasos = 0
         for intento in range(INTENTOS_AGARRE):
             al_alcance = False
             pasos_sin_sonar = 0
             while True:
-                if not self._ver_cubo_o_buscar(pasos):
+                ubic = self._ver_cubo_o_buscar(pasos)
+                if not ubic:
                     print("[WEBOTS] Perdi el cubo de vista: no sigo caminando.")
                     break
                 print("[WEBOTS] Ancho del cubo: {:.2f} (meta {:.2f})".format(
                     self.cubo_ancho, ANCHO_CUBO_AGARRE))
                 sonar = self._distancia_sonar()
                 print("[WEBOTS] Sonar: {}".format("sin lectura" if sonar is None else "{:.2f} m".format(sonar)))
+                distancia = self._distancia_por_homografia(ubic)
+                if distancia is not None:
+                    print("[WEBOTS] Distancia por homografia: {:.2f} m".format(distancia))
+                    if distancia <= DISTANCIA_AGARRE_METROS:
+                        print("[WEBOTS] Cubo a {:.2f} m segun la homografia: me detengo.".format(distancia))
+                        al_alcance = True
+                        break
                 if sonar is not None and sonar <= DISTANCIA_SONAR_AGARRE:
                     print("[WEBOTS] Obstaculo a {:.2f} m: me detengo.".format(sonar))
                     if self.cubo_ancho >= ANCHO_CUBO_AGARRE:
