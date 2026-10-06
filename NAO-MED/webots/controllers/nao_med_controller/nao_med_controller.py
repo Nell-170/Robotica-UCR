@@ -41,6 +41,7 @@ SEGUNDOS_POR_INCLINACION = 2.0
 # Acercamiento al cubo guiado por la camara (lazo cerrado).
 INCLINACION_ACERCAMIENTO = 0.4
 MAX_PASOS_ACERCAMIENTO = 12
+MAX_PASOS_SIN_SONAR = 3  # maximo de pasos sin lectura del sonar
 # Distancia (m) maxima al obstaculo del sonar para considerar el agarre.
 DISTANCIA_SONAR_AGARRE = 0.35
 SONAR_SIN_ECO = 2.0
@@ -464,6 +465,7 @@ class NAOMedController(object):
         pasos = 0
         for intento in range(INTENTOS_AGARRE):
             al_alcance = False
+            pasos_sin_sonar = 0
             while True:
                 if not self._ver_cubo_o_buscar(pasos):
                     print("[WEBOTS] Perdi el cubo de vista: no sigo caminando.")
@@ -479,11 +481,21 @@ class NAOMedController(object):
                     else:
                         print("[WEBOTS] El sonar detecta algo cerca, pero el cubo aun no parece al alcance.")
                     break
+                if sonar is None:
+                    if self.cubo_ancho >= ANCHO_CUBO_AGARRE:
+                        print("[WEBOTS] El cubo ya se ve al alcance (ancho {:.2f}): me detengo.".format(self.cubo_ancho))
+                        al_alcance = True
+                        break
+                    if pasos_sin_sonar >= MAX_PASOS_SIN_SONAR:
+                        print("[WEBOTS] Sin lectura del sonar tras {} pasos: me detengo por seguridad.".format(pasos_sin_sonar))
+                        break
                 if pasos >= MAX_PASOS_ACERCAMIENTO:
                     break
                 self._centrar_cubo()
                 self._dar_paso()
                 pasos += 1
+                if sonar is None:
+                    pasos_sin_sonar += 1
             if not al_alcance:
                 print("[WEBOTS] No confirme que el cubo este al alcance: cancelo el agarre.")
                 break
