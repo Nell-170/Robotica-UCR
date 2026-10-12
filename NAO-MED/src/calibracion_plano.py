@@ -58,7 +58,7 @@ FPS_CAMARA = 10
 try:
     from robot_connector import NAO_IP as IP_DEFECTO, NAO_PORT as PUERTO_DEFECTO
 except Exception:
-    IP_DEFECTO = "127.0.0.1"
+    IP_DEFECTO = " 192.168.1.140"
     PUERTO_DEFECTO = 9559
 
 
@@ -273,3 +273,5 @@ if __name__ == "__main__":
         verificar_calibracion(ip, puerto)
     else:
         calibrar_desde_consola()
+
+
