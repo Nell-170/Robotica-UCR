@@ -146,12 +146,12 @@ Table {
   size 0.6 0.8 0.3
 }
 Table {
-  translation -0.95 0.998 0
+  translation -1.74563 0.997971 0
   name "mesa_cubo"
   size 0.3 0.3 0.3
 }
 Solid {
-  translation -0.95 0.933 0.326
+  translation -1.74563 0.932971 0.326
   contactMaterial "cubo"
   children [
     Shape {
@@ -178,7 +178,7 @@ Solid {
   }
 }
 Solid {
-  translation -0.95 0.998 0.331
+  translation -1.74563 0.997971 0.331
   contactMaterial "cubo"
   children [
     Shape {
@@ -309,7 +309,7 @@ Solid {
   }
 }
 Solid {
-  translation -0.95 1.063 0.326
+  translation -1.74563 1.062971 0.326
   contactMaterial "cubo"
   children [
     Shape {
@@ -368,7 +368,8 @@ WoodenChair {
   rotation 0 0 1 -2.8798
 }
 Nao {
-  translation -1.74563 0.997971 0.34
+  translation -0.95 0.998 0.34
+  rotation 0 0 1 3.14159
   controller "nao_med_controller"
   cameraWidth 320
   cameraHeight 240
