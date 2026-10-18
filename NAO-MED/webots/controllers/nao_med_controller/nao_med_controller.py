@@ -150,16 +150,24 @@ class NAOMedController(object):
         self._esperar(duracion)
 
     def girar_180(self):
-        """Gira el robot 180 grados (un ciclo del motion TurnLeft180)."""
+        """Gira el robot 180 grados y regresa solo cuando el giro termino.
+
+        El motion TurnLeft180 dura 9.0 segundos (medido en el archivo).
+        Se espera SIEMPRE la duracion completa avanzando la simulacion,
+        y despues se confirma con isOver(); asi la busqueda del rostro
+        empieza unicamente con el robot ya de espaldas a la mesa.
+        """
         print("[WEBOTS] Girando 180 grados...")
         if not self.motion_girar:
             print("[WEBOTS] Aviso: no hay movimiento de giro cargado, se omite.")
-            self._esperar(4)
+            self._esperar(9)
             return
         self.motion_girar.play()
+        self._esperar(self.motion_girar.getDuration() / 1000.0 + 0.5)
         while not self.motion_girar.isOver():
             if self.robot.step(self.timestep) == -1:
                 return
+        print("[WEBOTS] Giro terminado: el robot quedo de espaldas a la mesa.")
 
     def caminar_hacia_frente(self, distancia=1.0):
         # El Nao de Webots no tiene un metodo "moveTo(distancia)" como NAOqi;
@@ -196,6 +204,7 @@ class NAOMedController(object):
             return True
         
         inicio = time.time()
+        print("[WEBOTS] Buscando rostro (hasta {} segundos)...".format(timeout))
         while time.time() - inicio < timeout:
             # Captura frame de la camara
             image_data = self.camera.getImage()
