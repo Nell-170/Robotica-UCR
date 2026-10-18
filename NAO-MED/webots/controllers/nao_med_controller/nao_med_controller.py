@@ -38,6 +38,11 @@ RUTA_MOTION_CAMINAR = os.path.join(
     "motions", "Forwards50.motion"
 )
 
+RUTA_MOTION_GIRAR_180 = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "motions", "TurnLeft180.motion"
+)
+
 RUTA_REFERENCIAS_CUBO = os.path.normpath(os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
     "..", "..", "..", "data", "cubo_referencias"
@@ -69,6 +74,12 @@ class NAOMedController(object):
             self.motion_caminar = Motion(RUTA_MOTION_CAMINAR)
         else:
             print("[WEBOTS] Aviso: no se encontro el archivo de movimiento {}".format(RUTA_MOTION_CAMINAR))
+
+        self.motion_girar = None
+        if os.path.exists(RUTA_MOTION_GIRAR_180):
+            self.motion_girar = Motion(RUTA_MOTION_GIRAR_180)
+        else:
+            print("[WEBOTS] Aviso: no se encontro el archivo de movimiento {}".format(RUTA_MOTION_GIRAR_180))
 
         # Camara del Nao (rostros y cubo)
         self.camera = self._get_device_seguro("CameraTop")
@@ -137,6 +148,18 @@ class NAOMedController(object):
     def reproducir_alarma(self, duracion=2):
         print("[WEBOTS] ALARMA SONORA ({} segundos)".format(duracion))
         self._esperar(duracion)
+
+    def girar_180(self):
+        """Gira el robot 180 grados (un ciclo del motion TurnLeft180)."""
+        print("[WEBOTS] Girando 180 grados...")
+        if not self.motion_girar:
+            print("[WEBOTS] Aviso: no hay movimiento de giro cargado, se omite.")
+            self._esperar(4)
+            return
+        self.motion_girar.play()
+        while not self.motion_girar.isOver():
+            if self.robot.step(self.timestep) == -1:
+                return
 
     def caminar_hacia_frente(self, distancia=1.0):
         # El Nao de Webots no tiene un metodo "moveTo(distancia)" como NAOqi;
@@ -449,6 +472,11 @@ class NAOMedController(object):
         else:
             print("[WEBOTS] No se identifico ningun cubo.")
         self.decir(self._frase_cubos(medicamentos))
+
+        # Girar para quedar de espaldas a la mesa (como estaba al inicio)
+        # y caminar hacia donde suele estar la persona.
+        self.girar_180()
+        self._esperar(1)
 
         # La deteccion de rostro es la que activa el movimiento:
         # solo camina y notifica si ve a alguien frente al robot.
