@@ -100,13 +100,15 @@ def _decir_frase(ip, puerto, medicamento):
     _decir(ip, puerto, "Te toca tu medicina, por favor tomate el {}".format(medicamento))
 
 
-def notificar_medicamento(config, medicamento):
+def notificar_medicamento(config, medicamento, diagnostico=False):
     """
     Ejecuta la secuencia completa de notificacion en el NAO:
-    alarma -> luces -> cubo -> rostro -> caminar -> hablar.
+    alarma -> luces -> cubos -> rostro -> caminar -> hablar.
 
     'config' es el dict retornado por robot_connector (ip, port, type).
-    
+    Con diagnostico=True el controlador imprime medidas de cada cubo y
+    guarda fotogramas anotados en data/debug/ (solo simulador).
+
     Si es simulador (Webots), usa webots_controller.
     Si es robot real, usa NAOqi (ALProxy).
     """
@@ -117,7 +119,7 @@ def notificar_medicamento(config, medicamento):
 
     if robot_type == "simulator":
         # Usar controlador de Webots
-        _notificar_webots(medicamento)
+        _notificar_webots(medicamento, diagnostico)
     else:
         # Usar NAOqi para robot real
         _reproducir_alarma(ip, puerto)
@@ -149,7 +151,7 @@ def notificar_medicamento(config, medicamento):
     print("Notificacion completada.")
 
 
-def _notificar_webots(medicamento):
+def _notificar_webots(medicamento, diagnostico=False):
     """
     Comunica con el controlador de Webots para ejecutar la notificacion.
     
@@ -186,7 +188,7 @@ def _notificar_webots(medicamento):
         return
 
     try:
-        comando = "NOTIFICAR:{}".format(medicamento)
+        comando = "NOTIFICAR:{}|DIAG={}".format(medicamento, 1 if diagnostico else 0)
         sock.send(comando.encode("utf-8"))
 
         sock.settimeout(timeout_respuesta)

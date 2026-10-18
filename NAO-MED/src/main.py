@@ -14,13 +14,18 @@ Flujo:
 from robot_connector import main as conectar_robot
 from medication_scheduler import ejecutar_monitor
 from nao_controller import notificar_medicamento
+import sys
 
 
 def main():
     config = conectar_robot()
 
+    # El diagnostico de cubos (impresiones y fotogramas anotados en
+    # data/debug/) se activa corriendo el main con --diagnostico.
+    diagnostico = "--diagnostico" in sys.argv
+
     def _notificar(medicamento):
-        notificar_medicamento(config, medicamento)
+        notificar_medicamento(config, medicamento, diagnostico=diagnostico)
 
     ejecutar_monitor(_notificar)
 

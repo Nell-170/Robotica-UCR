@@ -432,16 +432,18 @@ class NAOMedController(object):
             return "Veo el cubo {} y el cubo {}".format(medicamentos[0], medicamentos[1])
         return "Veo el cubo {}, el cubo {} y el cubo {}".format(*medicamentos)
 
-    def ejecutar_notificacion(self, medicamento):
+    def ejecutar_notificacion(self, medicamento, diagnostico=False):
         print("[WEBOTS] === NOTIFICACION DE MEDICAMENTO ===")
         print("[WEBOTS] Medicamento: {}".format(medicamento))
+        if diagnostico:
+            print("[WEBOTS] Modo diagnostico activo: se guardan fotogramas en data/debug/")
 
         self.reproducir_alarma(2)
         self.encender_luces()
 
         # Pipeline alternativo: no se agarra el cubo. Lo primero es
         # identificar que cubos hay en frente y decirlo.
-        medicamentos = self.identificar_cubos()
+        medicamentos = self.identificar_cubos(diagnostico=diagnostico)
         if medicamentos:
             print("[WEBOTS] Cubos identificados: {}".format(", ".join(medicamentos)))
         else:
@@ -482,8 +484,15 @@ class NAOMedController(object):
             data = conn.recv(1024)
             comando = data.decode("utf-8").strip()
             if comando.startswith("NOTIFICAR:"):
-                medicamento = comando.split(":", 1)[1]
-                self.ejecutar_notificacion(medicamento)
+                cuerpo = comando.split(":", 1)[1]
+                diagnostico = False
+                medicamento = cuerpo
+                # Formato opcional: NOTIFICAR:Medicamento|DIAG=1
+                if "|DIAG=" in cuerpo:
+                    medicamento, bandera = cuerpo.split("|DIAG=", 1)
+                    diagnostico = bandera.strip() == "1"
+                    medicamento = medicamento.strip()
+                self.ejecutar_notificacion(medicamento, diagnostico)
                 conn.send("OK".encode("utf-8"))
             else:
                 conn.send("COMANDO_DESCONOCIDO".encode("utf-8"))
