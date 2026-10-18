@@ -148,10 +148,10 @@ Table {
 Table {
   translation -1.74563 0.997971 0
   name "mesa_cubo"
-  size 0.3 0.3 0.3
+  size 0.3 0.8 0.3
 }
 Solid {
-  translation -1.74563 0.932971 0.326
+  translation -1.74563 0.722971 0.326
   contactMaterial "cubo"
   children [
     Shape {
@@ -309,7 +309,7 @@ Solid {
   }
 }
 Solid {
-  translation -1.74563 1.062971 0.326
+  translation -1.74563 1.272971 0.326
   contactMaterial "cubo"
   children [
     Shape {
