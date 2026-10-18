@@ -183,10 +183,7 @@ Solid {
   children [
     Shape {
       appearance PBRAppearance {
-        baseColor 1 1 1
-        baseColorMap ImageTexture {
-          url [ "../../data/imagenes/cubo_rubik.jpg" ]
-        }
+        baseColor 0.09 0.09 0.1
         roughness 1
         metalness 0
       }
@@ -194,6 +191,113 @@ Solid {
         size 0.06 0.06 0.06
       }
     }
+  Pose {
+    translation 0 0 0.0305
+    children [
+      Shape {
+        appearance PBRAppearance {
+          baseColorMap ImageTexture {
+            url [ "../../data/imagenes/rubik_cara_azul.jpg" ]
+          }
+          roughness 1
+          metalness 0
+        }
+        geometry Box {
+          size 0.054 0.054 0.001
+        }
+      }
+    ]
+  }
+  Pose {
+    translation 0 0 -0.0305
+  rotation 0 1 0 3.14159
+    children [
+      Shape {
+        appearance PBRAppearance {
+          baseColorMap ImageTexture {
+            url [ "../../data/imagenes/rubik_cara_blanco.jpg" ]
+          }
+          roughness 1
+          metalness 0
+        }
+        geometry Box {
+          size 0.054 0.054 0.001
+        }
+      }
+    ]
+  }
+  Pose {
+    translation 0.0305 0 0
+  rotation 0 1 0 1.5708
+    children [
+      Shape {
+        appearance PBRAppearance {
+          baseColorMap ImageTexture {
+            url [ "../../data/imagenes/rubik_cara_rojo.jpg" ]
+          }
+          roughness 1
+          metalness 0
+        }
+        geometry Box {
+          size 0.054 0.054 0.001
+        }
+      }
+    ]
+  }
+  Pose {
+    translation -0.0305 0 0
+  rotation 0 1 0 -1.5708
+    children [
+      Shape {
+        appearance PBRAppearance {
+          baseColorMap ImageTexture {
+            url [ "../../data/imagenes/rubik_cara_verde.jpg" ]
+          }
+          roughness 1
+          metalness 0
+        }
+        geometry Box {
+          size 0.054 0.054 0.001
+        }
+      }
+    ]
+  }
+  Pose {
+    translation 0 0.0305 0
+  rotation 1 0 0 -1.5708
+    children [
+      Shape {
+        appearance PBRAppearance {
+          baseColorMap ImageTexture {
+            url [ "../../data/imagenes/rubik_cara_amarillo.jpg" ]
+          }
+          roughness 1
+          metalness 0
+        }
+        geometry Box {
+          size 0.054 0.054 0.001
+        }
+      }
+    ]
+  }
+  Pose {
+    translation 0 -0.0305 0
+  rotation 1 0 0 1.5708
+    children [
+      Shape {
+        appearance PBRAppearance {
+          baseColorMap ImageTexture {
+            url [ "../../data/imagenes/rubik_cara_naranja.jpg" ]
+          }
+          roughness 1
+          metalness 0
+        }
+        geometry Box {
+          size 0.054 0.054 0.001
+        }
+      }
+    ]
+  }
   ]
   name "cubo_rubik"
   boundingObject Box {
