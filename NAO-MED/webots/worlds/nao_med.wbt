@@ -151,7 +151,7 @@ Table {
   size 0.3 0.3 0.3
 }
 Solid {
-  translation -0.95 0.998 0.326
+  translation -0.95 0.933 0.326
   contactMaterial "cubo"
   children [
     Shape {
@@ -169,6 +169,60 @@ Solid {
     }
   ]
   name "cubo"
+  boundingObject Box {
+    size 0.05 0.05 0.05
+  }
+  physics Physics {
+    density -1
+    mass 0.05
+  }
+}
+Solid {
+  translation -0.95 0.998 0.331
+  contactMaterial "cubo"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 1 1 1
+        baseColorMap ImageTexture {
+          url [ "../../data/imagenes/cubo_rubik.jpg" ]
+        }
+        roughness 1
+        metalness 0
+      }
+      geometry Box {
+        size 0.06 0.06 0.06
+      }
+    }
+  ]
+  name "cubo_rubik"
+  boundingObject Box {
+    size 0.06 0.06 0.06
+  }
+  physics Physics {
+    density -1
+    mass 0.1
+  }
+}
+Solid {
+  translation -0.95 1.063 0.326
+  contactMaterial "cubo"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 1 1 1
+        baseColorMap ImageTexture {
+          url [ "../../data/imagenes/cubo_invertido.jpg" ]
+        }
+        roughness 1
+        metalness 0
+      }
+      geometry Box {
+        size 0.05 0.05 0.05
+      }
+    }
+  ]
+  name "cubo_invertido"
   boundingObject Box {
     size 0.05 0.05 0.05
   }
