@@ -26,7 +26,7 @@ except ImportError:
     from naoqi_mock import ALProxy
 
 from reconocimiento import reconocer_rostro
-from deteccion_cubo import detectar_cubo
+from deteccion_cubo import identificar_cubos, frase_cubos
 
 # Distancia (en metros) que camina el NAO en linea recta hacia el frente
 DISTANCIA_CAMINATA_METROS = 1.0
@@ -125,14 +125,14 @@ def notificar_medicamento(config, medicamento, diagnostico=False):
         _reproducir_alarma(ip, puerto)
         _encender_luces(ip, puerto)
 
-        # El cubo representa la medicina: solo se informa si se encontro,
-        # y el flujo continua igual en ambos casos.
-        if detectar_cubo(ip, puerto):
-            print("[NAO-MED] Cubo detectado.")
-            _decir(ip, puerto, "Cubo detectado")
+        # Pipeline alternativo: no se agarra el cubo. Lo primero es
+        # identificar que cubos hay en frente y decirlo.
+        medicamentos = identificar_cubos(ip, puerto, diagnostico=diagnostico)
+        if medicamentos:
+            print("[NAO-MED] Cubos identificados: {}".format(", ".join(medicamentos)))
         else:
-            print("[NAO-MED] Cubo no detectado.")
-            _decir(ip, puerto, "Cubo no detectado")
+            print("[NAO-MED] No se identifico ningun cubo.")
+        _decir(ip, puerto, frase_cubos(medicamentos))
 
         # La deteccion de rostro es la que activa el movimiento:
         # solo camina y notifica si ve a alguien frente al robot.
