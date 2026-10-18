@@ -20,12 +20,8 @@ import sys
 def main():
     config = conectar_robot()
 
-    # El diagnostico de cubos (impresiones y fotogramas anotados en
-    # data/debug/) se activa corriendo el main con --diagnostico.
-    diagnostico = "--diagnostico" in sys.argv
-
     def _notificar(medicamento):
-        notificar_medicamento(config, medicamento, diagnostico=diagnostico)
+        notificar_medicamento(config, medicamento, diagnostico=False)
 
     ejecutar_monitor(_notificar)
 
