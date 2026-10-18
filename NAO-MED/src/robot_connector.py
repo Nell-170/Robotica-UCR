@@ -7,6 +7,7 @@ import subprocess
 import time
 import sys
 import os
+import shutil
 
 # Forzar UTF-8 en la salida para que los emojis no rompan la consola de Windows
 # (solo en Python 3.7+; en Python 2.7 no existe reconfigure)
@@ -42,8 +43,13 @@ NAO_WORLD = os.path.join(
 )
 
 def find_webots_executable():
-    """Busca el ejecutable de Webots en las ubicaciones comunes de Windows."""
+    """Busca Webots en PATH y en ubicaciones comunes de Linux/Windows."""
+    webots_from_path = shutil.which("webots")
+    if webots_from_path:
+        return webots_from_path
     webots_paths = [
+        "/usr/bin/webots",
+        "/usr/local/bin/webots",
         r"C:\Program Files\Webots\msys64\mingw64\bin\webots.exe",
         r"C:\Program Files (x86)\Webots\msys64\mingw64\bin\webots.exe",
     ]
@@ -104,6 +110,15 @@ def main():
     """
     Flujo principal: detecta NAO o abre simulador
     """
+    # Linux/CI y el launcher de simulacion pueden desactivar deliberadamente
+    # la deteccion del robot fisico: no se hace ningun intento de red.
+    if os.environ.get("NAOMED_SIM_ONLY", "").lower() in ("1", "true", "yes"):
+        print("[INFO] Modo simulacion: se omite la deteccion del NAO real.")
+        if not launch_webots_simulator():
+            print("[ERROR] No se pudo abrir el simulador.")
+            sys.exit(1)
+        return get_robot_connection(use_simulator=True)
+
     print("=" * 50)
     print("🔍 Buscando NAO Poseidón en la red...")
     print("=" * 50)

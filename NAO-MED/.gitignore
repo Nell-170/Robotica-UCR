@@ -1,1 +1,3 @@
 tmp_test_logs/
+.env
+.python-version

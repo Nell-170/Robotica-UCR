@@ -13,8 +13,14 @@
 #   
 #   Una vez descargado, agrégalo al PYTHONPATH o cópialo a la carpeta del proyecto
 #
-# Para correr en WEBOTS (simulador):
-#   - NO necesitas NAOqi SDK — el código usa naoqi_mock.py automáticamente
-#   - Solo necesitas Webots R2025a instalado
+# Dependencias instalables con pip para el simulador y sus detectores de vision.
+# El controlador de Webots carga estas librerias desde webots/libs mediante
+# runtime.ini.
+numpy>=1.24
+opencv-python>=4.8,<5
 #
-# Este archivo cubre las dependencias que sí se instalan con pip (actualmente ninguna).
+# Para correr en WEBOTS (simulador):
+#   - Instala Webots (R2025a o compatible); su modulo Python `controller` no
+#     se instala desde pip.
+#   - Ejecuta: python -m pip install -r requirements.txt
+#   - NAOqi no es necesario: el proyecto usa naoqi_mock.py automáticamente.
