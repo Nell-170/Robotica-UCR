@@ -336,7 +336,7 @@ Solid {
   }
 }
 Solid {
-  translation -0.5 1.4 0.5
+  translation 0.05 1.14 0.5
   rotation 0.57735 -0.57735 -0.57735 2.0944
   children [
     Shape {
