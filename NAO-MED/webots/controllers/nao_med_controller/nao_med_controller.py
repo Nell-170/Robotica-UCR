@@ -25,6 +25,9 @@ PUERTO_ESCUCHA = 9000
 # Inclinaciones de cabeza (rad) que barre el robot buscando el cubo.
 INCLINACIONES_CABEZA = (0.0, 0.35, 0.5, -0.3, -0.6)
 SEGUNDOS_POR_INCLINACION = 2.0
+# NAO inicia a unos 0.8 m de la mesa. Un ciclo de avance lo deja frente
+# al borde, con una distancia adecuada para intentar tomar el cubo.
+DISTANCIA_MESA_METROS = 0.5
 
 # Frases que dice el NAO segun el resultado de la deteccion de rostro
 # (mismo texto que usa el robot fisico en nao_controller.py).
@@ -271,7 +274,7 @@ class NAOMedController(object):
         # solo camina y notifica si ve a alguien frente al robot.
         if self.detectar_rostro():
             print("[WEBOTS] Persona detectada: el robot camina y notifica.")
-            self.caminar_hacia_frente(1.0)
+            self.caminar_hacia_frente(DISTANCIA_MESA_METROS)
             self.decir_frase(medicamento)
             self.decir(FRASE_ROSTRO_DETECTADO)
         else:

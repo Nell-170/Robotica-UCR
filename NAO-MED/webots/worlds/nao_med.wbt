@@ -151,7 +151,7 @@ Table {
   size 0.3 0.3 0.3
 }
 Solid {
-  translation -0.95 0.998 0.326
+  translation -1.07 0.998 0.326
   contactMaterial "cubo"
   children [
     Shape {
