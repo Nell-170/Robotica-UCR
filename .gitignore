@@ -47,3 +47,6 @@ Thumbs.db
 
 # Dependencias locales del simulador (run.bat setup)
 NAO-MED/webots/libs/
+
+# Fotogramas de diagnostico de la camara (no se confirman)
+NAO-MED/data/debug/
