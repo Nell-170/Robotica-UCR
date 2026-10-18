@@ -379,9 +379,13 @@ class NAOMedController(object):
 
         return sorted(hallados.items(), key=lambda par: par[1])
 
-    def identificar_cubos(self):
+    def identificar_cubos(self, diagnostico=False):
         """Barre la cabeza, identifica los cubos en frente y devuelve los
-        medicamentos vistos, ordenados de izquierda a derecha en la imagen."""
+        medicamentos vistos, ordenados de izquierda a derecha en la imagen.
+
+        Con diagnostico=True imprime, por cada candidato, sus medidas y
+        guarda un fotograma anotado en data/debug/ para afinar umbrales.
+        """
         if not self.camera or not OPENCV_DISPONIBLE:
             print("[WEBOTS] Identificacion de cubos no disponible (sin camara u OpenCV)")
             return []
@@ -396,7 +400,7 @@ class NAOMedController(object):
                 bgr = self._frame_bgr()
                 if bgr is not None:
                     etiqueta = None
-                    if primer_frame:
+                    if diagnostico and primer_frame:
                         etiqueta = "pitch{:+.1f}".format(inclinacion)
                         primer_frame = False
                     for medicamento, cx in self._cubos_en_frame(bgr, etiqueta):
@@ -412,6 +416,11 @@ class NAOMedController(object):
         self._inclinar_cabeza(0.0)
         ordenados = sorted(vistos.items(), key=lambda par: par[1])
         return [medicamento for medicamento, _ in ordenados]
+
+    def identificar_cubos_con_diagnostico(self):
+        """Igual a identificar_cubos, pero con impresiones y fotogramas de
+        diagnostico. Usar solo para calibrar umbrales."""
+        return self.identificar_cubos(diagnostico=True)
 
     def _frase_cubos(self, medicamentos):
         """Frase hablada con los cubos identificados."""
