@@ -43,6 +43,13 @@ RUTA_REFERENCIAS_CUBO = os.path.normpath(os.path.join(
     "..", "..", "..", "data", "cubo_referencias"
 ))
 
+# Diagnostico: aca se guardan fotogramas de la camara con los candidatos
+# marcados, para afinar los umbrales con evidencia y no a ciegas.
+RUTA_DEBUG = os.path.normpath(os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "..", "..", "..", "data", "debug"
+))
+
 
 class NAOMedController(object):
     def __init__(self):
@@ -251,6 +258,171 @@ class NAOMedController(object):
             print("[WEBOTS] No se detecto el cubo (mejor coincidencia: {})".format(mejor_global))
         return encontrado
 
+    def _frame_bgr(self):
+        """Imagen actual de la camara en BGR, o None si no hay camara."""
+        if not self.camera or not OPENCV_DISPONIBLE:
+            return None
+        image_data = self.camera.getImage()
+        if not image_data:
+            return None
+        width = self.camera.getWidth()
+        height = self.camera.getHeight()
+        rgba = np.frombuffer(image_data, dtype=np.uint8).reshape((height, width, 4))
+        return rgba[:, :, [2, 1, 0]]
+
+    def _cubos_en_frame(self, bgr, etiqueta_debug=None):
+        """Clasifica los cubos del frame por su estructura, no por el fondo.
+
+        La semilla es una mancha oscura compacta (el logo del cubo blanco,
+        el cuerpo del cubo negro) o azul (los stickers del rubik). Cada
+        semilla se clasifica por lo que hay en su entorno inmediato, asi el
+        color del fondo (puerta blanca, piso claro) no participa.
+        """
+        hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
+        h, w = hsv.shape[:2]
+        saturacion = hsv[:, :, 1]
+        valor = hsv[:, :, 2]
+        tono = hsv[:, :, 0]
+        # Umbrales medidos sobre fotogramas reales de la camara del Nao en
+        # Webots (data/debug/): esa camara desvia a azul toda la escena, la
+        # madera se ve con H~108 y S~98, la cara blanca del cubo rinde
+        # V~133 y el cuerpo negro V~70-90.
+        clara = ((saturacion < 80) & (valor > 115)).astype(np.uint8)
+        oscura = (valor < 90).astype(np.uint8)
+        # Azul solo si esta muy saturado: la mesa (S~98) y la pared quedan
+        # fuera; los stickers del rubik miden S~169.
+        azul = ((tono >= 100) & (tono <= 135) & (saturacion > 120) & (valor > 60)).astype(np.uint8)
+
+        nucleo = np.ones((3, 3), np.uint8)
+        hallados = {}  # medicamento -> x del hallazgo mas a la izquierda
+        anotada = bgr.copy() if etiqueta_debug else None
+
+        def _entorno(x, y, ancho, alto):
+            """Recuadro de la mancha con un margen de 2 pixeles."""
+            return (max(x - 2, 0), max(y - 2, 0),
+                    min(x + ancho + 2, w), min(y + alto + 2, h))
+
+        # Semillas oscuras:
+        # - pequena (el logo, 8-130 px, caja hasta 16x16) rodeada de claro:
+        #   el paracetamol.
+        # - grande (200-700 px) y mayormente oscura sin azul alrededor: el
+        #   cuerpo del ibuprofeno.
+        # El cuerpo oscuro del rubik (area ~350) queda excluido porque su
+        # entorno tiene stickers azules.
+        n, _, stats, _ = cv2.connectedComponentsWithStats(
+            cv2.morphologyEx(oscura, cv2.MORPH_CLOSE, nucleo))
+        for i in range(1, n):
+            x, y, ancho, alto, area = stats[i]
+            if area < 8 or area > 700 or ancho > w * 0.5 or alto > h * 0.5:
+                continue
+            if not 0.5 < ancho / float(alto) < 2.0:
+                continue
+            if (y + alto / 2.0) > 0.85 * h:
+                continue
+            x0, y0, x1, y1 = _entorno(x, y, ancho, alto)
+            trozo = np.s_[y0:y1, x0:x1]
+            clara_ent = clara[trozo].mean()
+            oscura_ent = oscura[trozo].mean()
+            azul_ent = azul[trozo].mean()
+            medicamento = None
+            if area <= 130 and ancho <= 18 and alto <= 18 and clara_ent >= 0.25 and azul_ent < 0.12:
+                medicamento = "paracetamol"
+            elif area > 200 and oscura_ent >= 0.40 and azul_ent < 0.12:
+                medicamento = "ibuprofeno"
+            if etiqueta_debug:
+                print("[CUBO-DEBUG] {} oscuro: area={} caja={}x{} clara={:.2f} oscura={:.2f} azul={:.2f} -> {}".format(
+                    etiqueta_debug, area, ancho, alto, clara_ent, oscura_ent, azul_ent,
+                    medicamento or "descartado"))
+                cv2.rectangle(anotada, (x0, y0), (x1, y1), (0, 0, 255), 1)
+            if medicamento is None:
+                continue
+            cx = x + ancho / 2.0
+            if medicamento not in hallados or cx < hallados[medicamento]:
+                hallados[medicamento] = cx
+
+        # Semillas azules: los stickers del rubik (clonacepam). Se exige que
+        # el entorno tambien tenga azul (la cara 3x3 entera) y que la mancha
+        # sea chica: el piso, que esta camara tambien ve azulado, forma una
+        # banda de todo el ancho y queda excluida por tamano.
+        n, _, stats, _ = cv2.connectedComponentsWithStats(
+            cv2.morphologyEx(azul, cv2.MORPH_CLOSE, nucleo))
+        for i in range(1, n):
+            x, y, ancho, alto, area = stats[i]
+            if area < 8 or ancho > 40 or alto > 40:
+                continue
+            # Proporcion relajada: los stickers pueden verse como una fila
+            # (19x5 en la imagen real). La banda del piso queda excluida por
+            # el tope de ancho de arriba.
+            if not 0.25 < ancho / float(alto) < 4.0:
+                continue
+            if (y + alto / 2.0) > 0.85 * h:
+                continue
+            x0, y0, x1, y1 = _entorno(x, y, ancho, alto)
+            fraccion_azul = azul[y0:y1, x0:x1].mean()
+            if etiqueta_debug:
+                print("[CUBO-DEBUG] {} azul: area={} caja={}x{} azul={:.2f} -> {}".format(
+                    etiqueta_debug, area, ancho, alto, fraccion_azul,
+                    "clonacepam" if fraccion_azul >= 0.20 else "descartado"))
+                cv2.rectangle(anotada, (x0, y0), (x1, y1), (0, 255, 255), 1)
+            if fraccion_azul < 0.20:
+                continue
+            cx = x + ancho / 2.0
+            if "clonacepam" not in hallados or cx < hallados["clonacepam"]:
+                hallados["clonacepam"] = cx
+
+        if etiqueta_debug and anotada is not None:
+            if not os.path.isdir(RUTA_DEBUG):
+                os.makedirs(RUTA_DEBUG)
+            ruta_imagen = os.path.join(RUTA_DEBUG, "frame_{}.png".format(etiqueta_debug))
+            cv2.imwrite(ruta_imagen, anotada)
+            print("[CUBO-DEBUG] Fotograma guardado: {}".format(ruta_imagen))
+
+        return sorted(hallados.items(), key=lambda par: par[1])
+
+    def identificar_cubos(self):
+        """Barre la cabeza, identifica los cubos en frente y devuelve los
+        medicamentos vistos, ordenados de izquierda a derecha en la imagen."""
+        if not self.camera or not OPENCV_DISPONIBLE:
+            print("[WEBOTS] Identificacion de cubos no disponible (sin camara u OpenCV)")
+            return []
+
+        vistos = {}
+        for inclinacion in INCLINACIONES_CABEZA:
+            self._inclinar_cabeza(inclinacion)
+            inicio = time.time()
+            por_medicamento = {}
+            primer_frame = True
+            while time.time() - inicio < SEGUNDOS_POR_INCLINACION:
+                bgr = self._frame_bgr()
+                if bgr is not None:
+                    etiqueta = None
+                    if primer_frame:
+                        etiqueta = "pitch{:+.1f}".format(inclinacion)
+                        primer_frame = False
+                    for medicamento, cx in self._cubos_en_frame(bgr, etiqueta):
+                        por_medicamento.setdefault(medicamento, []).append(cx)
+                if self.robot.step(self.timestep) == -1:
+                    break
+            for medicamento, xs in por_medicamento.items():
+                if len(xs) >= 3 and medicamento not in vistos:
+                    vistos[medicamento] = sum(xs) / float(len(xs))
+            if len(vistos) == 3:
+                break
+
+        self._inclinar_cabeza(0.0)
+        ordenados = sorted(vistos.items(), key=lambda par: par[1])
+        return [medicamento for medicamento, _ in ordenados]
+
+    def _frase_cubos(self, medicamentos):
+        """Frase hablada con los cubos identificados."""
+        if not medicamentos:
+            return "No veo ningun cubo"
+        if len(medicamentos) == 1:
+            return "Veo el cubo " + medicamentos[0]
+        if len(medicamentos) == 2:
+            return "Veo el cubo {} y el cubo {}".format(medicamentos[0], medicamentos[1])
+        return "Veo el cubo {}, el cubo {} y el cubo {}".format(*medicamentos)
+
     def ejecutar_notificacion(self, medicamento):
         print("[WEBOTS] === NOTIFICACION DE MEDICAMENTO ===")
         print("[WEBOTS] Medicamento: {}".format(medicamento))
@@ -258,14 +430,14 @@ class NAOMedController(object):
         self.reproducir_alarma(2)
         self.encender_luces()
 
-        # El cubo representa la medicina: solo se informa si se encontro,
-        # y el flujo continua igual en ambos casos.
-        if self.detectar_cubo():
-            print("[WEBOTS] Cubo detectado.")
-            self.decir("Cubo detectado")
+        # Pipeline alternativo: no se agarra el cubo. Lo primero es
+        # identificar que cubos hay en frente y decirlo.
+        medicamentos = self.identificar_cubos()
+        if medicamentos:
+            print("[WEBOTS] Cubos identificados: {}".format(", ".join(medicamentos)))
         else:
-            print("[WEBOTS] Cubo no detectado.")
-            self.decir("Cubo no detectado")
+            print("[WEBOTS] No se identifico ningun cubo.")
+        self.decir(self._frase_cubos(medicamentos))
 
         # La deteccion de rostro es la que activa el movimiento:
         # solo camina y notifica si ve a alguien frente al robot.
