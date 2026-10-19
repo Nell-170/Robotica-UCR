@@ -222,7 +222,10 @@ def notificar_medicamento(config, medicamento, diagnostico=False):
             # Guiar a la persona hacia la mesa: girar y caminar un metro de regreso.
             _girar_180(ip, puerto)
             _caminar_hacia_frente(ip, puerto)
-            # Ya de vuelta frente a la mesa: senalar el cubo correcto.
+            # Pausa para que el robot termine de asentarse (postura) antes
+            # de senalar: sin esto, el gesto y la frase pueden percibirse
+            # encimados con el final de la caminata.
+            time.sleep(1)
             _senalar_medicamento(ip, puerto, medicamentos, medicamento)
         else:
             print("[NAO-MED] No se detecto a nadie: el robot no camina.")
