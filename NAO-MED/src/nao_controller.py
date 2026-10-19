@@ -41,11 +41,27 @@ COLOR_LUCES_NOTIFICACION = 0x00A2FF  # azul, para llamar la atencion
 FRASE_ROSTRO_DETECTADO = "Sigueme, te mostrare en donde esta."
 FRASE_ROSTRO_NO_DETECTADO = "No veo a nadie, por favor acercate."
 
-# Frase y pose del brazo al senalar el cubo del centro.
+# Frases y poses del brazo al senalar el cubo, segun su posicion.
 FRASE_CUBO_CENTRO = "Es este, el del centro"
+FRASE_CUBO_IZQUIERDA = "Es este, el de la izquierda"
+FRASE_CUBO_DERECHA = "Es este, el de la derecha"
 ANGULOS_BRAZO_SENALAR = {
     "RShoulderPitch": 0.0,
     "RShoulderRoll": -0.05,
+    "RElbowYaw": 0.0,
+    "RElbowRoll": 0.03,
+    "RWristYaw": 0.0,
+}
+ANGULOS_BRAZO_SENALAR_IZQUIERDA = {
+    "RShoulderPitch": 0.0,
+    "RShoulderRoll": 0.3,
+    "RElbowYaw": -1.0,
+    "RElbowRoll": 0.03,
+    "RWristYaw": 0.0,
+}
+ANGULOS_BRAZO_SENALAR_DERECHA = {
+    "RShoulderPitch": 0.0,
+    "RShoulderRoll": -0.3,
     "RElbowYaw": 0.0,
     "RElbowRoll": 0.03,
     "RWristYaw": 0.0,
@@ -122,18 +138,24 @@ def _mover_brazo(ip, puerto, angulos):
         print("Aviso: no se pudo mover el brazo ({}).".format(e))
 
 
+_GESTOS_SENALAR = {
+    "centro": (ANGULOS_BRAZO_SENALAR, FRASE_CUBO_CENTRO),
+    "izquierda": (ANGULOS_BRAZO_SENALAR_IZQUIERDA, FRASE_CUBO_IZQUIERDA),
+    "derecha": (ANGULOS_BRAZO_SENALAR_DERECHA, FRASE_CUBO_DERECHA),
+}
+
+
 def _senalar_medicamento(ip, puerto, medicamentos, medicamento):
-    """Si el cubo del medicamento esta en el centro, levanta el brazo
-    senalandolo y lo anuncia. Izquierda/derecha quedan pendientes."""
+    """Levanta el brazo senalando el cubo del medicamento, en la
+    direccion que corresponda (centro/izquierda/derecha), y lo anuncia."""
     posicion = posicion_cubo(medicamentos, medicamento)
-    if posicion == "centro":
-        print("[NAO-MED] El cubo del {} esta en el centro: senalando.".format(medicamento))
-        _mover_brazo(ip, puerto, ANGULOS_BRAZO_SENALAR)
-        _decir(ip, puerto, FRASE_CUBO_CENTRO)
+    gesto = _GESTOS_SENALAR.get(posicion)
+    if gesto:
+        angulos, frase = gesto
+        print("[NAO-MED] El cubo del {} esta a la/en el {}: senalando.".format(medicamento, posicion))
+        _mover_brazo(ip, puerto, angulos)
+        _decir(ip, puerto, frase)
         _mover_brazo(ip, puerto, ANGULOS_BRAZO_REPOSO)
-    elif posicion in ("izquierda", "derecha"):
-        print("[NAO-MED] El cubo del {} esta a la {} (senalizacion lateral pendiente).".format(
-            medicamento, posicion))
     else:
         print("[NAO-MED] No se pudo determinar la posicion del cubo del {}.".format(medicamento))
 
@@ -185,7 +207,6 @@ def notificar_medicamento(config, medicamento, diagnostico=False):
         else:
             print("[NAO-MED] No se identifico ningun cubo.")
         _decir(ip, puerto, frase_cubos(medicamentos))
-        _senalar_medicamento(ip, puerto, medicamentos, medicamento)
 
         # La deteccion de rostro es la que activa el movimiento:
         # solo camina y notifica si ve a alguien frente al robot.
@@ -198,6 +219,8 @@ def notificar_medicamento(config, medicamento, diagnostico=False):
             # Guiar a la persona hacia la mesa: girar y caminar un metro de regreso.
             _girar_180(ip, puerto)
             _caminar_hacia_frente(ip, puerto)
+            # Ya de vuelta frente a la mesa: senalar el cubo correcto.
+            _senalar_medicamento(ip, puerto, medicamentos, medicamento)
         else:
             print("[NAO-MED] No se detecto a nadie: el robot no camina.")
             _decir(ip, puerto, FRASE_ROSTRO_NO_DETECTADO)

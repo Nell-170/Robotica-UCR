@@ -32,11 +32,15 @@ SEGUNDOS_POR_INCLINACION = 2.0
 FRASE_ROSTRO_DETECTADO = "Sigueme, te mostrare en donde esta."
 FRASE_ROSTRO_NO_DETECTADO = "No veo a nadie, por favor acercate."
 
-# Frase y pose del brazo al senalar el cubo del centro (mismos angulos que
-# el robot real, en nao_controller.py).
+# Frases y poses del brazo al senalar el cubo, segun su posicion (mismos
+# angulos que el robot real, en nao_controller.py).
 FRASE_CUBO_CENTRO = "Es este, el del centro"
+FRASE_CUBO_IZQUIERDA = "Es este, el de la izquierda"
+FRASE_CUBO_DERECHA = "Es este, el de la derecha"
 ARTICULACIONES_BRAZO = ("RShoulderPitch", "RShoulderRoll", "RElbowYaw", "RElbowRoll", "RWristYaw")
 ANGULOS_BRAZO_SENALAR = (0.0, -0.05, 0.0, 0.03, 0.0)
+ANGULOS_BRAZO_SENALAR_IZQUIERDA = (0.0, 0.3, -1.0, 0.03, 0.0)
+ANGULOS_BRAZO_SENALAR_DERECHA = (0.0, -0.3, 0.0, 0.03, 0.0)
 ANGULOS_BRAZO_REPOSO = (1.5497, -0.1334, 1.1894, 0.6317, -0.0323)
 
 # El archivo .motion viene copiado dentro del proyecto (webots/motions/) para
@@ -567,18 +571,23 @@ class NAOMedController(object):
             return None
         return ("izquierda", "centro", "derecha")[medicamentos_normalizados.index(medicamento)]
 
+    _GESTOS_SENALAR = {
+        "centro": (ANGULOS_BRAZO_SENALAR, FRASE_CUBO_CENTRO),
+        "izquierda": (ANGULOS_BRAZO_SENALAR_IZQUIERDA, FRASE_CUBO_IZQUIERDA),
+        "derecha": (ANGULOS_BRAZO_SENALAR_DERECHA, FRASE_CUBO_DERECHA),
+    }
+
     def _senalar_medicamento(self, medicamentos, medicamento):
-        """Si el cubo del medicamento esta en el centro, levanta el brazo
-        senalandolo y lo anuncia. Izquierda/derecha quedan pendientes."""
+        """Levanta el brazo senalando el cubo del medicamento, en la
+        direccion que corresponda (centro/izquierda/derecha), y lo anuncia."""
         posicion = self._posicion_cubo(medicamentos, medicamento)
-        if posicion == "centro":
-            print("[WEBOTS] El cubo del {} esta en el centro: senalando.".format(medicamento))
-            self._mover_brazo(ANGULOS_BRAZO_SENALAR)
-            self.decir(FRASE_CUBO_CENTRO)
+        gesto = self._GESTOS_SENALAR.get(posicion)
+        if gesto:
+            angulos, frase = gesto
+            print("[WEBOTS] El cubo del {} esta a la/en el {}: senalando.".format(medicamento, posicion))
+            self._mover_brazo(angulos)
+            self.decir(frase)
             self._mover_brazo(ANGULOS_BRAZO_REPOSO)
-        elif posicion in ("izquierda", "derecha"):
-            print("[WEBOTS] El cubo del {} esta a la {} (senalizacion lateral pendiente).".format(
-                medicamento, posicion))
         else:
             print("[WEBOTS] No se pudo determinar la posicion del cubo del {}.".format(medicamento))
 
@@ -609,7 +618,6 @@ class NAOMedController(object):
         else:
             print("[WEBOTS] No se identifico ningun cubo.")
         self.decir(self._frase_cubos(medicamentos))
-        self._senalar_medicamento(medicamentos, medicamento)
 
         # Girar para quedar de espaldas a la mesa (como estaba al inicio)
         # y caminar hacia donde suele estar la persona.
@@ -627,6 +635,8 @@ class NAOMedController(object):
             self.girar_180()
             self._esperar(1)
             self.caminar_hacia_frente(1.0)
+            # Ya de vuelta frente a la mesa: senalar el cubo correcto.
+            self._senalar_medicamento(medicamentos, medicamento)
         else:
             print("[WEBOTS] No se detecto a nadie: el robot no camina.")
             self.decir(FRASE_ROSTRO_NO_DETECTADO)
