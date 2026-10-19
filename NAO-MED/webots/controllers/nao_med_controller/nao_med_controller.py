@@ -7,6 +7,7 @@ nodo Nao en el mundo nao_med.wbt). Escucha comandos por socket desde
 el proceso externo (main.py -> nao_controller.py) y mueve/hace hablar
 al NAO simulado en consecuencia.
 """
+import io
 import math
 import os
 import socket
@@ -73,6 +74,14 @@ RUTA_MOTION_GIRAR_DER_60 = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
     "motions", "TurnRight60.motion"
 )
+RUTA_MOTION_PASO_IZQ = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "motions", "SideStepLeft.motion"
+)
+RUTA_MOTION_PASO_DER = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "motions", "SideStepRight.motion"
+)
 RUTA_MOTION_PARARSE = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
     "motions", "StandUpFromFront.motion"
@@ -124,6 +133,8 @@ class NAOMedController(object):
                                ("motion_girar_60", RUTA_MOTION_GIRAR_60),
                                ("motion_girar_der_40", RUTA_MOTION_GIRAR_DER_40),
                                ("motion_girar_der_60", RUTA_MOTION_GIRAR_DER_60),
+                               ("motion_paso_izq", RUTA_MOTION_PASO_IZQ),
+                               ("motion_paso_der", RUTA_MOTION_PASO_DER),
                                ("motion_pararse", RUTA_MOTION_PARARSE)):
             setattr(self, atributo, Motion(ruta) if os.path.exists(ruta) else None)
 
@@ -282,6 +293,92 @@ class NAOMedController(object):
             while not self.motion_caminar.isOver():
                 if self.robot.step(self.timestep) == -1:
                     return
+
+    def _reproducir_paso_lateral(self, izquierda, escala_roll=0.75, escala_tiempo=1.5, entrada=1.5):
+        ruta = RUTA_MOTION_PASO_IZQ if izquierda else RUTA_MOTION_PASO_DER
+        with io.open(ruta, encoding="utf-8") as f:
+            filas = [l.strip().split(",") for l in f if l.strip()]
+        nombres = [n for n in filas[0][2:] if "Hip" in n or "Knee" in n or "Ankle" in n]
+        columnas = dict((n, filas[0][2:].index(n)) for n in nombres)
+        poses = []
+        for fila in filas[1:]:
+            mm, ss, ms = fila[0].split(":")
+            t = (int(mm) * 60 + int(ss) + int(ms) / 1000.0) * escala_tiempo
+            vals = {}
+            for n in nombres:
+                v = float(fila[2 + columnas[n]])
+                if "Roll" in n:
+                    v *= escala_roll
+                vals[n] = v
+            poses.append((t, vals))
+        motores = dict((n, self.robot.getDevice(n)) for n in nombres)
+        sensores = {}
+        for n in nombres:
+            sensor = motores[n].getPositionSensor()
+            sensor.enable(self.timestep)
+            sensores[n] = sensor
+        self.robot.step(self.timestep)
+        actual = dict((n, sensores[n].getValue()) for n in nombres)
+        paso_ms = self.timestep / 1000.0
+        t = 0.0
+        while t < entrada:
+            a = min(t / entrada, 1.0)
+            for n in nombres:
+                motores[n].setPosition(actual[n] + (poses[0][1][n] - actual[n]) * a)
+            if self.robot.step(self.timestep) == -1:
+                return
+            t += paso_ms
+        t = 0.0
+        i = 0
+        total = poses[-1][0]
+        while t <= total:
+            while i < len(poses) - 2 and poses[i + 1][0] <= t:
+                i += 1
+            t0, v0 = poses[i]
+            t1, v1 = poses[i + 1]
+            a = 0.0 if t1 == t0 else min(max((t - t0) / (t1 - t0), 0.0), 1.0)
+            for n in nombres:
+                motores[n].setPosition(v0[n] + (v1[n] - v0[n]) * a)
+            if self.robot.step(self.timestep) == -1:
+                return
+            t += paso_ms
+
+    def _caminar_lateral(self, izquierda, distancia):
+        """Pasos laterales (izquierda/derecha del robot) hasta recorrer
+        'distancia' metros. El avance se mide con el supervisor, proyectando
+        el desplazamiento sobre el eje y local del robot (su izquierda)."""
+        lado = "izquierda" if izquierda else "derecha"
+        print("[WEBOTS] Caminando {} metros hacia la {}...".format(distancia, lado))
+        mov = self.motion_paso_izq if izquierda else self.motion_paso_der
+        if not mov:
+            print("[WEBOTS] Aviso: no hay movimiento de paso lateral, se omite.")
+            return
+        if not self._de_pie():
+            self._pararse()
+        m = self.nao.getOrientation()
+        eje_y = (m[1], m[4])
+        inicio = list(self.nao.getPosition())
+        recorrido = 0.0
+        ciclos = 0
+        while ciclos < 8:
+            self._reproducir_paso_lateral(izquierda)
+            ciclos += 1
+            pos = self.nao.getPosition()
+            recorrido = abs((pos[0] - inicio[0]) * eje_y[0] + (pos[1] - inicio[1]) * eje_y[1])
+            if not self._de_pie() or recorrido + 0.5 * (recorrido / ciclos) >= distancia:
+                break
+        print("[WEBOTS] Recorrido lateral real: {:.2f} m en {} ciclo(s) (meta {:.2f} m)".format(
+            recorrido, ciclos, distancia))
+        self._esperar(2)
+        if not self._de_pie():
+            print("[WEBOTS] El robot se cayo durante el paso lateral.")
+            self._pararse()
+
+    def caminar_hacia_izquierda(self, distancia=0.25):
+        self._caminar_lateral(True, distancia)
+
+    def caminar_hacia_derecha(self, distancia=0.25):
+        self._caminar_lateral(False, distancia)
 
     def decir(self, texto):
         # El Nao de Webots no incluye un dispositivo de audio/TTS: no hay
@@ -550,7 +647,7 @@ class NAOMedController(object):
         diagnostico. Usar solo para calibrar umbrales."""
         return self.identificar_cubos(diagnostico=True)
 
-    def _mover_brazo(self, angulos, espera=2.0):
+    def _mover_brazo(self, angulos, espera=3.0, velocidad=1.5):
         """Lleva el brazo derecho a la pose dada (radianes por articulacion).
 
         Se fuerza la velocidad maxima de cada motor para que el brazo
@@ -563,7 +660,9 @@ class NAOMedController(object):
             return
         for motor, angulo in zip(self.brazo_motores, angulos):
             try:
-                motor.setVelocity(motor.getMaxVelocity())
+                # Velocidad moderada: a la maxima el cambio brusco de peso
+                # puede tirar al robot, sobre todo tras un paso lateral.
+                motor.setVelocity(min(velocidad, motor.getMaxVelocity()))
             except Exception:
                 pass
             motor.setPosition(angulo)
@@ -590,15 +689,23 @@ class NAOMedController(object):
         "derecha": (ANGULOS_BRAZO_SENALAR_DERECHA, FRASE_CUBO_DERECHA),
     }
 
-    def _senalar_medicamento(self, medicamentos, medicamento):
+    def _senalar_medicamento(self, medicamentos, medicamento, alineado=False):
         """Levanta el brazo senalando el cubo del medicamento, en la
         direccion que corresponda (centro/izquierda/derecha), y lo anuncia."""
         posicion = self._posicion_cubo(medicamentos, medicamento)
         gesto = self._GESTOS_SENALAR.get(posicion)
         if gesto:
             angulos, frase = gesto
+            if alineado:
+                # Ya esta frente al cubo: senala al frente, no hacia un lado.
+                angulos = ANGULOS_BRAZO_SENALAR
             print("[WEBOTS] El cubo del {} esta a la/en el {}: senalando.".format(medicamento, posicion))
+            if not self._de_pie():
+                print("[WEBOTS] El robot esta en el piso antes de senalar: parandose...")
+                self._pararse()
             self._mover_brazo(angulos)
+            if not self._de_pie():
+                print("[WEBOTS] El robot se cayo al levantar el brazo.")
             self.decir(frase)
             # Webots no tiene audio: sin esta pausa el brazo bajaria de
             # inmediato y el gesto casi no se notaria.
@@ -655,7 +762,17 @@ class NAOMedController(object):
             # antes de senalar: sin esto, el gesto y la frase ocurren
             # encimados con el final de la caminata.
             self._esperar(7)
-            self._senalar_medicamento(medicamentos, medicamento)
+            self.caminar_hacia_frente(1.0)
+            self._esperar(4)
+            # Alinearse con el cubo del medicamento: paso lateral de 25 cm
+            # (el cubo del centro no requiere moverse).
+            posicion = self._posicion_cubo(medicamentos, medicamento)
+            if posicion == "izquierda":
+                self.caminar_hacia_izquierda(0.25)
+            elif posicion == "derecha":
+                self.caminar_hacia_derecha(0.25)
+            self._esperar(2)
+            self._senalar_medicamento(medicamentos, medicamento, alineado=True)
         else:
             print("[WEBOTS] No se detecto a nadie: el robot no camina.")
             self.decir(FRASE_ROSTRO_NO_DETECTADO)
