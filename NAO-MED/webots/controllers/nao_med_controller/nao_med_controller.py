@@ -7,12 +7,13 @@ nodo Nao en el mundo nao_med.wbt). Escucha comandos por socket desde
 el proceso externo (main.py -> nao_controller.py) y mueve/hace hablar
 al NAO simulado en consecuencia.
 """
+import math
 import os
 import socket
 import time
 import numpy as np
 
-from controller import Robot, Motion
+from controller import Motion, Supervisor
 
 try:
     import cv2
@@ -42,6 +43,26 @@ RUTA_MOTION_GIRAR_180 = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
     "motions", "TurnLeft180.motion"
 )
+RUTA_MOTION_GIRAR_40 = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "motions", "TurnLeft40.motion"
+)
+RUTA_MOTION_GIRAR_60 = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "motions", "TurnLeft60.motion"
+)
+RUTA_MOTION_GIRAR_DER_40 = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "motions", "TurnRight40.motion"
+)
+RUTA_MOTION_GIRAR_DER_60 = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "motions", "TurnRight60.motion"
+)
+RUTA_MOTION_PARARSE = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "motions", "StandUpFromFront.motion"
+)
 
 RUTA_REFERENCIAS_CUBO = os.path.normpath(os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
@@ -58,8 +79,11 @@ RUTA_DEBUG = os.path.normpath(os.path.join(
 
 class NAOMedController(object):
     def __init__(self):
-        self.robot = Robot()
+        self.robot = Supervisor()
         self.timestep = int(self.robot.getBasicTimeStep())
+        # Nodo del propio robot (supervisor): permite medir rumbo y altura
+        # reales, para comprobar el giro y detectar caidas.
+        self.nao = self.robot.getSelf()
 
         # Nombres reales de los dispositivos del modelo Nao de Webots
         # (verificados contra Nao.proto; no son los mismos nombres que usa
@@ -80,6 +104,13 @@ class NAOMedController(object):
             self.motion_girar = Motion(RUTA_MOTION_GIRAR_180)
         else:
             print("[WEBOTS] Aviso: no se encontro el archivo de movimiento {}".format(RUTA_MOTION_GIRAR_180))
+
+        for atributo, ruta in (("motion_girar_40", RUTA_MOTION_GIRAR_40),
+                               ("motion_girar_60", RUTA_MOTION_GIRAR_60),
+                               ("motion_girar_der_40", RUTA_MOTION_GIRAR_DER_40),
+                               ("motion_girar_der_60", RUTA_MOTION_GIRAR_DER_60),
+                               ("motion_pararse", RUTA_MOTION_PARARSE)):
+            setattr(self, atributo, Motion(ruta) if os.path.exists(ruta) else None)
 
         # Camara del Nao (rostros y cubo)
         self.camera = self._get_device_seguro("CameraTop")
@@ -149,25 +180,73 @@ class NAOMedController(object):
         print("[WEBOTS] ALARMA SONORA ({} segundos)".format(duracion))
         self._esperar(duracion)
 
+    def _rumbo_grados(self):
+        # Rumbo real del robot en grados (0 = eje +x del mundo, positivo
+        # girando a la izquierda), medido como supervisor.
+        m = self.nao.getOrientation()
+        return math.degrees(math.atan2(m[3], m[0]))
+
+    def _de_pie(self):
+        # El torso de un Nao de pie queda a ~0.34 m; caido queda mucho mas bajo.
+        return self.nao.getPosition()[2] > 0.25
+
+    def _pararse(self):
+        print("[WEBOTS] El robot esta en el piso: parandose...")
+        if not self.motion_pararse:
+            print("[WEBOTS] Aviso: no hay movimiento para pararse, se omite.")
+            return
+        self.motion_pararse.play()
+        self._esperar(self.motion_pararse.getDuration() / 1000.0 + 0.5)
+        while not self.motion_pararse.isOver():
+            if self.robot.step(self.timestep) == -1:
+                return
+        print("[WEBOTS] De pie de nuevo (rumbo {:.0f} grados).".format(self._rumbo_grados()))
+
+    def _reproducir_movimiento(self, mov):
+        mov.play()
+        self._esperar(mov.getDuration() / 1000.0 + 0.5)
+        while not mov.isOver():
+            if self.robot.step(self.timestep) == -1:
+                return
+
     def girar_180(self):
         """Gira el robot 180 grados y regresa solo cuando el giro termino.
 
-        El motion TurnLeft180 dura 9.0 segundos (medido en el archivo).
-        Se espera SIEMPRE la duracion completa avanzando la simulacion,
-        y despues se confirma con isOver(); asi la busqueda del rostro
-        empieza unicamente con el robot ya de espaldas a la mesa.
+        Los motions son de lazo abierto: TurnLeft180 parte de una pose de
+        pies juntos y despues de caminar el robot queda con los pies en otra
+        pose, por lo que el giro puede salir corto o tirar al robot. Por eso
+        se mide el rumbo real (supervisor) y se corrige con giros de 40/60
+        grados hasta quedar a menos de 25 grados del objetivo.
         """
-        print("[WEBOTS] Girando 180 grados...")
+        inicio = self._rumbo_grados()
+        print("[WEBOTS] Girando 180 grados (rumbo inicial {:.0f} grados)...".format(inicio))
         if not self.motion_girar:
             print("[WEBOTS] Aviso: no hay movimiento de giro cargado, se omite.")
             self._esperar(9)
             return
-        self.motion_girar.play()
-        self._esperar(self.motion_girar.getDuration() / 1000.0 + 0.5)
-        while not self.motion_girar.isOver():
-            if self.robot.step(self.timestep) == -1:
-                return
-        print("[WEBOTS] Giro terminado: el robot quedo de espaldas a la mesa.")
+        self._reproducir_movimiento(self.motion_girar)
+        if not self._de_pie():
+            self._pararse()
+        rumbo = self._rumbo_grados()
+        falta = ((inicio + 180.0 - rumbo) + 180.0) % 360.0 - 180.0
+        intentos = 0
+        while abs(falta) > 25.0 and intentos < 3:
+            print("[WEBOTS] El giro quedo {:.0f} grados del objetivo (rumbo {:.0f}): corrigiendo...".format(
+                falta, rumbo))
+            if falta > 0:
+                mov = self.motion_girar_60 if (abs(falta) > 45 and self.motion_girar_60) else self.motion_girar_40
+            else:
+                mov = self.motion_girar_der_60 if (abs(falta) > 45 and self.motion_girar_der_60) else self.motion_girar_der_40
+            if not mov:
+                print("[WEBOTS] Aviso: no hay movimiento de correccion, se omite.")
+                break
+            self._reproducir_movimiento(mov)
+            if not self._de_pie():
+                self._pararse()
+            rumbo = self._rumbo_grados()
+            falta = ((inicio + 180.0 - rumbo) + 180.0) % 360.0 - 180.0
+            intentos += 1
+        print("[WEBOTS] Giro terminado: rumbo final {:.0f} grados.".format(rumbo))
 
     def caminar_hacia_frente(self, distancia=1.0):
         # El Nao de Webots no tiene un metodo "moveTo(distancia)" como NAOqi;
@@ -175,6 +254,8 @@ class NAOMedController(object):
         # ~50cm por ciclo) sobre los motores de las piernas. Para aproximar
         # la distancia pedida, se reproduce el ciclo las veces necesarias.
         print("[WEBOTS] Caminando {} metros hacia el frente...".format(distancia))
+        if not self._de_pie():
+            self._pararse()
         if not self.motion_caminar:
             print("[WEBOTS] Aviso: no hay movimiento de caminata cargado, se omite.")
             self._esperar(3)
