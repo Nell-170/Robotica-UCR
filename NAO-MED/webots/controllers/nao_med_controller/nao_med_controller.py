@@ -10,9 +10,10 @@ al NAO simulado en consecuencia.
 import os
 import socket
 import time
+import logging
 import numpy as np
 
-from controller import Robot, Motion
+from controller import Supervisor, Motion
 
 try:
     import cv2
@@ -25,9 +26,16 @@ PUERTO_ESCUCHA = 9000
 # Inclinaciones de cabeza (rad) que barre el robot buscando el cubo.
 INCLINACIONES_CABEZA = (0.0, 0.35, 0.5, -0.3, -0.6)
 SEGUNDOS_POR_INCLINACION = 2.0
-# NAO inicia a unos 0.8 m de la mesa. Un ciclo de avance lo deja frente
-# al borde, con una distancia adecuada para intentar tomar el cubo.
-DISTANCIA_MESA_METROS = 0.5
+# Separacion horizontal entre el cuerpo y el cubo para la postura de agarre.
+# Las manos alcanzan el cubo por delante del cuerpo.
+DISTANCIA_AGARRE_METROS = 0.20
+TIEMPO_MAXIMO_ACERCAMIENTO = 60.0
+
+logging.basicConfig(
+    filename=os.path.join(os.path.dirname(os.path.abspath(__file__)), "ejecucion.log"),
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(message)s",
+)
 
 # Frases que dice el NAO segun el resultado de la deteccion de rostro
 # (mismo texto que usa el robot fisico en nao_controller.py).
@@ -53,7 +61,7 @@ RUTA_REFERENCIAS_CUBO = os.path.normpath(os.path.join(
 
 class NAOMedController(object):
     def __init__(self):
-        self.robot = Robot()
+        self.robot = Supervisor()
         self.timestep = int(self.robot.getBasicTimeStep())
 
         # Nombres reales de los dispositivos del modelo Nao de Webots
@@ -179,6 +187,7 @@ class NAOMedController(object):
 
         ciclos = max(int(round(distancia / 0.5)), 1)
         for _ in range(ciclos):
+            self.motion_caminar.setTime(0)
             self.motion_caminar.play()
             while not self.motion_caminar.isOver():
                 if self.robot.step(self.timestep) == -1:
@@ -197,6 +206,66 @@ class NAOMedController(object):
             while not self.motion_retroceder.isOver():
                 if self.robot.step(self.timestep) == -1:
                     return
+
+    def acercarse_al_cubo(self):
+        """Camina hasta dejar el cubo al alcance usando posiciones del simulador."""
+        if self.motion_caminar is None or not self.motion_caminar.isValid():
+            logging.error("No se pudo cargar Forwards50.motion")
+            print("[WEBOTS] No se pudo cargar Forwards50.motion.")
+            return False
+
+        cubo = None
+        if self.robot.getSupervisor():
+            cubo = self.robot.getFromDef("CUBO")
+            if cubo is None:
+                # Un mundo guardado desde el editor puede conservar el nombre
+                # del objeto sin conservar el DEF agregado al archivo.
+                hijos = self.robot.getRoot().getField("children")
+                for indice in range(hijos.getCount()):
+                    nodo = hijos.getMFNode(indice)
+                    nombre = nodo.getField("name")
+                    if nombre is not None and nombre.getSFString() == "cubo":
+                        cubo = nodo
+                        break
+        if cubo is None:
+            logging.warning("Sin posicion del cubo: supervisor=%s; avance de dos ciclos sin agarre",
+                            self.robot.getSupervisor())
+            print("[WEBOTS] Sin posicion del cubo: avanzando dos ciclos. "
+                  "Recarga nao_med.wbt para habilitar el agarre por distancia.")
+            self.caminar_hacia_frente(1.0)
+            return False
+
+        inicio = self.robot.getTime()
+        logging.info("Iniciando acercamiento al cubo por distancia")
+        self.motion_caminar.setTime(0)
+        self.motion_caminar.setLoop(True)
+        self.motion_caminar.play()
+        ultimo_registro = -1.0
+        while self.robot.getTime() - inicio < TIEMPO_MAXIMO_ACERCAMIENTO:
+            # Avanzar antes de consultar el estado de la animacion.
+            if self.robot.step(self.timestep) == -1:
+                self.motion_caminar.stop()
+                self.motion_caminar.setLoop(False)
+                return False
+            posicion = self.robot.getSelf().getPosition()
+            objetivo = cubo.getPosition()
+            distancia = ((objetivo[0] - posicion[0]) ** 2
+                         + (objetivo[1] - posicion[1]) ** 2) ** 0.5
+            if self.robot.getTime() - ultimo_registro >= 1.0:
+                logging.info("Acercamiento: distancia al cubo=%.3f m", distancia)
+                ultimo_registro = self.robot.getTime()
+            if distancia <= DISTANCIA_AGARRE_METROS:
+                self.motion_caminar.stop()
+                self.motion_caminar.setLoop(False)
+                logging.info("Cubo al alcance: %.3f m; iniciando agarre", distancia)
+                print("[WEBOTS] Cubo al alcance: {:.3f} m; iniciando agarre.".format(distancia))
+                return True
+
+        self.motion_caminar.stop()
+        self.motion_caminar.setLoop(False)
+        logging.warning("Tiempo limite de acercamiento; distancia final=%.3f m", distancia)
+        print("[WEBOTS] No se llego al cubo dentro del tiempo limite; se omite el agarre.")
+        return False
 
     def intentar_tomar_cubo(self):
         """Prepara ambas manos y las acerca al cubo para intentar tomarlo."""
@@ -417,10 +486,10 @@ class NAOMedController(object):
         # solo camina y notifica si ve a alguien frente al robot.
         if self.detectar_rostro():
             print("[WEBOTS] Persona detectada: el robot camina y notifica.")
-            self.caminar_hacia_frente(DISTANCIA_MESA_METROS)
-            self.intentar_tomar_cubo()
-            self.levantar_brazos_con_cubo()
-            self.caminar_hacia_atras(0.5)
+            if self.acercarse_al_cubo():
+                self.intentar_tomar_cubo()
+                self.levantar_brazos_con_cubo()
+                self.caminar_hacia_atras(0.5)
             self.decir_frase(medicamento)
             self.decir(FRASE_ROSTRO_DETECTADO)
         else:

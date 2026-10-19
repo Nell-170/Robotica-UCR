@@ -154,7 +154,7 @@ Table {
   name "mesa_cubo"
   size 0.05 0.05 0.3
 }
-Solid {
+DEF CUBO Solid {
   translation -1.07 0.998 0.32499386874990066
   rotation 0.765474015048089 0.641647336143248 -0.048355230393742725 9.246129382381141e-17
   children [
@@ -231,6 +231,7 @@ Nao {
   translation -1.7456045831806621 0.9979709998578261 0.3335068286385707
   rotation 5.502606190561656e-06 0.9999999999848607 -7.468483342538098e-10 7.726165819420756e-05
   controller "nao_med_controller"
+  supervisor TRUE
   cameraWidth 320
   cameraHeight 240
 }
