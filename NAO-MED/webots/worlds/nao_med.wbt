@@ -146,7 +146,7 @@ Table {
   size 0.6 0.8 0.3
 }
 Table {
-  translation -1.74563 0.997971 0
+  translation -1.82563 0.997971 0
   name "mesa_cubo"
   size 0.3 0.8 0.3
 }
@@ -178,7 +178,7 @@ Solid {
   }
 }
 Solid {
-  translation -1.74563 0.997971 0.331
+  translation -1.82563 0.997971 0.331
   contactMaterial "cubo"
   children [
     Shape {
