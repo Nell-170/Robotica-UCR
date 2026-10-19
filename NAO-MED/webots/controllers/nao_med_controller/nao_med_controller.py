@@ -491,6 +491,7 @@ class NAOMedController(object):
         # solo camina y notifica si ve a alguien frente al robot.
         if self.detectar_rostro():
             print("[WEBOTS] Persona detectada: el robot camina y notifica.")
+            self.caminar_hacia_frente(1.0)
             self.decir_frase(medicamento)
             self.decir(FRASE_ROSTRO_DETECTADO)
             # Guiar a la persona hacia la mesa: girar y caminar un metro de regreso.

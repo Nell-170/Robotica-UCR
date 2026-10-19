@@ -149,6 +149,7 @@ def notificar_medicamento(config, medicamento, diagnostico=False):
         if hay_persona:
             print("[NAO-MED] Persona detectada: el robot camina y notifica.")
             _caminar_hacia_frente(ip, puerto)
+            _caminar_hacia_frente(ip, puerto)
             _decir_frase(ip, puerto, medicamento)
             _decir(ip, puerto, FRASE_ROSTRO_DETECTADO)
             # Guiar a la persona hacia la mesa: girar y caminar un metro de regreso.
