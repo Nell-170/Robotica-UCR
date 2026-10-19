@@ -40,6 +40,10 @@ RUTA_MOTION_CAMINAR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
     "motions", "Forwards50.motion"
 )
+RUTA_MOTION_RETROCEDER = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "motions", "Backwards.motion"
+)
 
 RUTA_REFERENCIAS_CUBO = os.path.normpath(os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
@@ -60,11 +64,39 @@ class NAOMedController(object):
             "right_eye": self._get_device_seguro("Face/Led/Right"),
         }
         self.cabeza = self._get_device_seguro("HeadPitch")
+        self.brazo_izquierdo = {
+            nombre: self._get_device_seguro(nombre)
+            for nombre in (
+                "LShoulderPitch", "LShoulderRoll", "LElbowYaw",
+                "LElbowRoll", "LWristYaw"
+            )
+        }
+        self.brazo_derecho = {
+            nombre: self._get_device_seguro(nombre)
+            for nombre in (
+                "RShoulderPitch", "RShoulderRoll", "RElbowYaw",
+                "RElbowRoll", "RWristYaw"
+            )
+        }
+        self.dedos_izquierdos = [
+            self._get_device_seguro("LPhalanx{}".format(numero))
+            for numero in range(1, 9)
+        ]
+        self.dedos_derechos = [
+            self._get_device_seguro("RPhalanx{}".format(numero))
+            for numero in range(1, 9)
+        ]
         self.motion_caminar = None
         if os.path.exists(RUTA_MOTION_CAMINAR):
             self.motion_caminar = Motion(RUTA_MOTION_CAMINAR)
         else:
             print("[WEBOTS] Aviso: no se encontro el archivo de movimiento {}".format(RUTA_MOTION_CAMINAR))
+        self.motion_retroceder = None
+        if os.path.exists(RUTA_MOTION_RETROCEDER):
+            self.motion_retroceder = Motion(RUTA_MOTION_RETROCEDER)
+        else:
+            print("[WEBOTS] Aviso: no se encontro el movimiento de retroceso {}".format(
+                RUTA_MOTION_RETROCEDER))
 
         # Camara del Nao (rostros y cubo)
         self.camera = self._get_device_seguro("CameraTop")
@@ -151,6 +183,117 @@ class NAOMedController(object):
             while not self.motion_caminar.isOver():
                 if self.robot.step(self.timestep) == -1:
                     return
+
+    def caminar_hacia_atras(self, distancia=0.5):
+        """Retrocede usando el movimiento oficial Backwards de Webots."""
+        print("[WEBOTS] Caminando {} metros hacia atras...".format(distancia))
+        if not self.motion_retroceder:
+            print("[WEBOTS] Aviso: no hay movimiento de retroceso cargado, se omite.")
+            return
+
+        ciclos = max(int(round(distancia / 0.5)), 1)
+        for _ in range(ciclos):
+            self.motion_retroceder.play()
+            while not self.motion_retroceder.isOver():
+                if self.robot.step(self.timestep) == -1:
+                    return
+
+    def intentar_tomar_cubo(self):
+        """Prepara ambas manos y las acerca al cubo para intentar tomarlo."""
+        print("[WEBOTS] Intentando tomar el cubo...")
+
+        # En el modelo NAO de Webots, la posicion maxima deja los dedos
+        # abiertos. Hazlo antes de mover los brazos.
+        for dedo in self.dedos_izquierdos + self.dedos_derechos:
+            if dedo:
+                dedo.setPosition(dedo.getMaxPosition())
+        self._esperar(2.0)
+
+        # Retira los brazos para evitar empujar el cubo.
+        posiciones_retiro = {
+            # Only move back enough to clear the approach; do not drop
+            # the hands below the tabletop before bringing them inward.
+            "LShoulderPitch": 0.75,
+            "LShoulderRoll": 0.3,
+            "LElbowYaw": -0.7,
+            "LElbowRoll": -0.6,
+            "LWristYaw": 0.0,
+            "RShoulderPitch": 0.75,
+            "RShoulderRoll": -0.3,
+            "RElbowYaw": 0.7,
+            "RElbowRoll": 0.6,
+            "RWristYaw": 0.0,
+        }
+        for nombre, posicion in posiciones_retiro.items():
+            grupo = self.brazo_izquierdo if nombre.startswith("L") else self.brazo_derecho
+            motor = grupo[nombre]
+            if motor:
+                motor.setPosition(posicion)
+        self._esperar(1.5)
+        self._esperar(1.0)
+
+        posiciones_izquierdas = {
+            # Keep the hands above the tabletop while reaching inward.
+            "LShoulderPitch": 0.7,
+            "LShoulderRoll": -0.15,
+            # Rotate the left hand around the cube: fingers to the side,
+            # thumb toward the far side of the box.
+            "LElbowYaw": -0.9,
+            "LElbowRoll": -0.65,
+            # Keep the fingers broadside to the cube face.
+            "LWristYaw": -0.2,
+        }
+        posiciones_derechas = {
+            "RShoulderPitch": 0.7,
+            "RShoulderRoll": 0.15,
+            # Mirror the same wrap-around pose on the right hand.
+            "RElbowYaw": 0.9,
+            "RElbowRoll": 0.65,
+            "RWristYaw": 0.2,
+        }
+        for nombre, posicion in posiciones_izquierdas.items():
+            motor = self.brazo_izquierdo[nombre]
+            if motor:
+                motor.setPosition(posicion)
+        for nombre, posicion in posiciones_derechas.items():
+            motor = self.brazo_derecho[nombre]
+            if motor:
+                motor.setPosition(posicion)
+        self._esperar(2.0)
+
+        # Close the fingers only part-way to hold the cube without crushing it.
+        for dedo in self.dedos_izquierdos + self.dedos_derechos:
+            if dedo:
+                minimo = dedo.getMinPosition()
+                maximo = dedo.getMaxPosition()
+                dedo.setPosition(maximo + 0.35 * (minimo - maximo))
+        self._esperar(0.7)
+        print("[WEBOTS] Cubo sujetado suavemente.")
+
+    def levantar_brazos_con_cubo(self):
+        """Eleva los brazos despues del agarre, manteniendo las manos abiertas."""
+        posiciones = {
+            # Bring the arms slightly inward and keep them straighter while
+            # lifting, so the open hands continue supporting the cube.
+            "LShoulderPitch": 0.25,
+            "LShoulderRoll": -0.2,
+            "LElbowYaw": -0.8,
+            "LElbowRoll": -0.3,
+            "LWristYaw": 0.0,
+            "RShoulderPitch": 0.25,
+            "RShoulderRoll": 0.2,
+            "RElbowYaw": 0.8,
+            "RElbowRoll": 0.3,
+            "RWristYaw": 0.0,
+        }
+        for nombre, posicion in posiciones.items():
+            grupo = self.brazo_izquierdo if nombre.startswith("L") else self.brazo_derecho
+            motor = grupo[nombre]
+            if motor:
+                motor.setPosition(posicion)
+        # Give the motors time to reach the raised pose without jerking the cube.
+        self._esperar(3.5)
+        print("[WEBOTS] Brazos elevados con el cubo.")
 
     def decir(self, texto):
         # El Nao de Webots no incluye un dispositivo de audio/TTS: no hay
@@ -275,6 +418,9 @@ class NAOMedController(object):
         if self.detectar_rostro():
             print("[WEBOTS] Persona detectada: el robot camina y notifica.")
             self.caminar_hacia_frente(DISTANCIA_MESA_METROS)
+            self.intentar_tomar_cubo()
+            self.levantar_brazos_con_cubo()
+            self.caminar_hacia_atras(0.5)
             self.decir_frase(medicamento)
             self.decir(FRASE_ROSTRO_DETECTADO)
         else:

@@ -49,8 +49,8 @@ WorldInfo {
   ]
 }
 Viewpoint {
-  orientation -0.12003397117585744 0.03522026573151634 0.9921448375340944 2.575046275756999
-  position 2.2110584056853018 -1.798351998275922 1.1018607429444633
+  orientation 0.09950371902099893 0 -0.9950371902099893 -2.616164537362164
+  position -0.44 0.57 0.45
 }
 Background {
   backUrl [
@@ -80,6 +80,10 @@ CeilingLight {
 NaoRoom {
 }
 Cabinet {
+  hidden translation_7 -3.983816229428178e-07 -3.9873659929412497e-13 0
+  hidden rotation_7 0 0 1 2.0018643884357652e-06
+  hidden translation_11 -2.8788167411821196e-07 2.449707103835408e-13 0
+  hidden rotation_11 0 0 -1 1.701866571339329e-06
   translation -0.2 1.99 0
   rotation 0 0 1 -1.5707953071795862
   primaryAppearance PaintedWood {
@@ -121,16 +125,16 @@ DEF PAINTING_VERTICAL VisualArmature {
   ]
 }
 Key {
-  translation -0.375001 1.56 0.3
-  rotation 0 1 0 1.5708
+  translation -0.3753771484628655 1.56 0.28998963883142953
+  rotation -3.2777800915567395e-15 1 -3.466586555493885e-15 1.5307692051840778
   contactMaterial "key"
 }
 KeyPot {
   translation 0.12 0.2 0.3
 }
 Book {
-  translation -0.19 -0.16992 0.31
-  rotation 0.6215291877683468 0.4768691440655283 0.6215281877680446 -2.2516453071795866
+  translation -0.18999789849810247 -0.1699200145641275 0.3099632124999944
+  rotation 0.6215269003889168 0.47687380320776857 0.6215269003889565 -2.2516404915576986
   name "book(1)"
 }
 BunchOfSunFlowers {
@@ -146,19 +150,20 @@ Table {
   size 0.6 0.8 0.3
 }
 Table {
-  translation -0.95 0.998 0
+  translation -1.07 0.998 0
   name "mesa_cubo"
-  size 0.3 0.3 0.3
+  size 0.05 0.05 0.3
 }
 Solid {
-  translation -1.07 0.998 0.326
-  contactMaterial "cubo"
+  translation -1.07 0.998 0.32499386874990066
+  rotation 0.765474015048089 0.641647336143248 -0.048355230393742725 9.246129382381141e-17
   children [
     Shape {
       appearance PBRAppearance {
-        baseColor 1 1 1
         baseColorMap ImageTexture {
-          url [ "../../data/cubo_referencias/cubo.jpg" ]
+          url [
+            "../../data/cubo_referencias/cubo.jpg"
+          ]
         }
         roughness 1
         metalness 0
@@ -169,6 +174,7 @@ Solid {
     }
   ]
   name "cubo"
+  contactMaterial "cubo"
   boundingObject Box {
     size 0.05 0.05 0.05
   }
@@ -179,19 +185,19 @@ Solid {
 }
 Solid {
   translation -0.5 1.4 0.5
-  rotation 0.57735 -0.57735 -0.57735 2.0944
+  rotation 0.5773502691896258 -0.5773502691896258 -0.5773502691896258 2.0944
   children [
     Shape {
       appearance PBRAppearance {
-        baseColor 1 1 1
         baseColorMap ImageTexture {
-          url [ "../../data/imagenes/rostro_prueba.png" ]
+          url [
+            "../../data/imagenes/rostro_prueba.png"
+          ]
         }
         roughness 1
         metalness 0
       }
       geometry Plane {
-        size 1 1
       }
     }
   ]
@@ -210,7 +216,20 @@ WoodenChair {
   rotation 0 0 1 -2.8798
 }
 Nao {
-  translation -1.74563 0.997971 0.34
+  hidden rotation_18 1.28673833288286e-12 0.9999999999889008 4.711536119498952e-06 5.46285592908365e-07
+  hidden rotation_19 1 0 0 8.429369702178807e-08
+  hidden rotation_20 0 0 1 9.424321830774485e-08
+  hidden rotation_21 1 0 0 2.9802322387695313e-08
+  hidden rotation_30 -1.2868166498037038e-12 0.9999999999888993 -4.7118228729653e-06 5.46285592908365e-07
+  hidden rotation_31 -1 0 0 8.429369702178807e-08
+  hidden rotation_32 0 0 -1 9.424321830774485e-08
+  hidden rotation_33 -1 0 0 2.9802322387695313e-08
+  hidden rotation_42 0 -0.7071067811865476 -0.7071067811865476 3.686343692795336e-07
+  hidden rotation_43 -0.9999999999999999 0 0 2.598106231415675e-07
+  hidden rotation_52 0 -0.7071067811865476 0.7071067811865476 3.686343692795336e-07
+  hidden rotation_53 0.9999999999999999 0 0 2.598106231415675e-07
+  translation -1.7456045831806621 0.9979709998578261 0.3335068286385707
+  rotation 5.502606190561656e-06 0.9999999999848607 -7.468483342538098e-10 7.726165819420756e-05
   controller "nao_med_controller"
   cameraWidth 320
   cameraHeight 240
