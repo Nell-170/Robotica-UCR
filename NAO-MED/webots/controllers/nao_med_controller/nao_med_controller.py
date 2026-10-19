@@ -38,9 +38,12 @@ FRASE_CUBO_CENTRO = "Es este, el del centro"
 FRASE_CUBO_IZQUIERDA = "Es este, el de la izquierda"
 FRASE_CUBO_DERECHA = "Es este, el de la derecha"
 ARTICULACIONES_BRAZO = ("RShoulderPitch", "RShoulderRoll", "RElbowYaw", "RElbowRoll", "RWristYaw")
-ANGULOS_BRAZO_SENALAR = (0.0, -0.05, 0.0, 0.03, 0.0)
-ANGULOS_BRAZO_SENALAR_IZQUIERDA = (0.0, 0.3, -1.0, 0.03, 0.0)
-ANGULOS_BRAZO_SENALAR_DERECHA = (0.0, -0.3, 0.0, 0.03, 0.0)
+# El brazo entero se levanta y se estira (pitch bien negativo = por
+# encima de la horizontal, codo casi sin doblar) para que se vea como
+# un senalamiento claro con todo el brazo, no solo la mano.
+ANGULOS_BRAZO_SENALAR = (-0.5, -0.05, 0.0, 0.05, 0.0)
+ANGULOS_BRAZO_SENALAR_IZQUIERDA = (-0.5, 0.3, -1.0, 0.05, 0.0)
+ANGULOS_BRAZO_SENALAR_DERECHA = (-0.5, -0.3, 0.0, 0.05, 0.0)
 ANGULOS_BRAZO_REPOSO = (1.5497, -0.1334, 1.1894, 0.6317, -0.0323)
 
 # El archivo .motion viene copiado dentro del proyecto (webots/motions/) para
@@ -547,12 +550,22 @@ class NAOMedController(object):
         diagnostico. Usar solo para calibrar umbrales."""
         return self.identificar_cubos(diagnostico=True)
 
-    def _mover_brazo(self, angulos, espera=1.0):
-        """Lleva el brazo derecho a la pose dada (radianes por articulacion)."""
+    def _mover_brazo(self, angulos, espera=2.0):
+        """Lleva el brazo derecho a la pose dada (radianes por articulacion).
+
+        Se fuerza la velocidad maxima de cada motor para que el brazo
+        realmente llegue al angulo pedido dentro del tiempo de espera
+        (si no, con la velocidad por defecto puede quedarse a medio
+        camino y verse como que "casi no se levanta").
+        """
         if not all(self.brazo_motores):
             print("[WEBOTS] Aviso: no estan todos los motores del brazo, se omite.")
             return
         for motor, angulo in zip(self.brazo_motores, angulos):
+            try:
+                motor.setVelocity(motor.getMaxVelocity())
+            except Exception:
+                pass
             motor.setPosition(angulo)
         self._esperar(espera)
 
@@ -587,6 +600,9 @@ class NAOMedController(object):
             print("[WEBOTS] El cubo del {} esta a la/en el {}: senalando.".format(medicamento, posicion))
             self._mover_brazo(angulos)
             self.decir(frase)
+            # Webots no tiene audio: sin esta pausa el brazo bajaria de
+            # inmediato y el gesto casi no se notaria.
+            self._esperar(2.0)
             self._mover_brazo(ANGULOS_BRAZO_REPOSO)
         else:
             print("[WEBOTS] No se pudo determinar la posicion del cubo del {}.".format(medicamento))

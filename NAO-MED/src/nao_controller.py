@@ -45,25 +45,28 @@ FRASE_ROSTRO_NO_DETECTADO = "No veo a nadie, por favor acercate."
 FRASE_CUBO_CENTRO = "Es este, el del centro"
 FRASE_CUBO_IZQUIERDA = "Es este, el de la izquierda"
 FRASE_CUBO_DERECHA = "Es este, el de la derecha"
+# El brazo entero se levanta y se estira (pitch bien negativo = por
+# encima de la horizontal, codo casi sin doblar) para que se vea como
+# un senalamiento claro con todo el brazo, no solo la mano.
 ANGULOS_BRAZO_SENALAR = {
-    "RShoulderPitch": 0.0,
+    "RShoulderPitch": -0.5,
     "RShoulderRoll": -0.05,
     "RElbowYaw": 0.0,
-    "RElbowRoll": 0.03,
+    "RElbowRoll": 0.05,
     "RWristYaw": 0.0,
 }
 ANGULOS_BRAZO_SENALAR_IZQUIERDA = {
-    "RShoulderPitch": 0.0,
+    "RShoulderPitch": -0.5,
     "RShoulderRoll": 0.3,
     "RElbowYaw": -1.0,
-    "RElbowRoll": 0.03,
+    "RElbowRoll": 0.05,
     "RWristYaw": 0.0,
 }
 ANGULOS_BRAZO_SENALAR_DERECHA = {
-    "RShoulderPitch": 0.0,
+    "RShoulderPitch": -0.5,
     "RShoulderRoll": -0.3,
     "RElbowYaw": 0.0,
-    "RElbowRoll": 0.03,
+    "RElbowRoll": 0.05,
     "RWristYaw": 0.0,
 }
 ANGULOS_BRAZO_REPOSO = {
