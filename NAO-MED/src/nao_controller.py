@@ -35,6 +35,7 @@ DISTANCIA_CAMINATA_METROS = 1.0
 DISTANCIA_PASO_LATERAL_METROS = 0.25
 TOLERANCIA_GIRO_RADIANES = math.radians(3.0)
 INTENTOS_CORRECCION_GIRO = 3
+AJUSTE_RUMBO_REGRESO_RADIANES = math.radians(120.0)
 
 # Duracion de la alarma sonora, en segundos
 DURACION_ALARMA_SEGUNDOS = 2
@@ -285,8 +286,10 @@ def notificar_medicamento(config, medicamento, diagnostico=False):
             _caminar_hacia_frente(ip, puerto)
             _decir_frase(ip, puerto, medicamento)
             _decir(ip, puerto, FRASE_ROSTRO_DETECTADO)
-            # Volver al rumbo original de la mesa, medido antes del primer giro.
-            if _girar_hacia_rumbo(ip, puerto, rumbo_mesa):
+            # El robot regreso ~60 grados a la derecha del rumbo de la mesa;
+            # sesgar el objetivo a la izquierda compensa ese error observado.
+            rumbo_regreso = rumbo_mesa + AJUSTE_RUMBO_REGRESO_RADIANES
+            if _girar_hacia_rumbo(ip, puerto, rumbo_regreso):
                 _caminar_hacia_frente(ip, puerto)
                 # Pausa larga para que el robot termine de caminar y asentarse
                 # antes de senalar: sin esto, el gesto y la frase ocurren
