@@ -30,6 +30,9 @@ SEGUNDOS_POR_INCLINACION = 2.0
 # Las manos alcanzan el cubo por delante del cuerpo.
 DISTANCIA_AGARRE_METROS = 0.20
 TIEMPO_MAXIMO_ACERCAMIENTO = 60.0
+# Velocidades angulares durante el agarre (rad/s).
+VELOCIDAD_BRAZOS_AGARRE = 0.30
+VELOCIDAD_DEDOS_AGARRE = 0.25
 
 logging.basicConfig(
     filename=os.path.join(os.path.dirname(os.path.abspath(__file__)), "ejecucion.log"),
@@ -271,12 +274,19 @@ class NAOMedController(object):
         """Prepara ambas manos y las acerca al cubo para intentar tomarlo."""
         print("[WEBOTS] Intentando tomar el cubo...")
 
+        # Limitar los motores hace mas lento el movimiento real; las pausas
+        # permiten completar cada postura antes de iniciar la siguiente.
+        for motor in list(self.brazo_izquierdo.values()) + list(self.brazo_derecho.values()):
+            if motor:
+                motor.setVelocity(min(VELOCIDAD_BRAZOS_AGARRE, motor.getMaxVelocity()))
+
         # En el modelo NAO de Webots, la posicion maxima deja los dedos
         # abiertos. Hazlo antes de mover los brazos.
         for dedo in self.dedos_izquierdos + self.dedos_derechos:
             if dedo:
+                dedo.setVelocity(min(VELOCIDAD_DEDOS_AGARRE, dedo.getMaxVelocity()))
                 dedo.setPosition(dedo.getMaxPosition())
-        self._esperar(2.0)
+        self._esperar(3.0)
 
         # Retira los brazos para evitar empujar el cubo.
         posiciones_retiro = {
@@ -298,8 +308,7 @@ class NAOMedController(object):
             motor = grupo[nombre]
             if motor:
                 motor.setPosition(posicion)
-        self._esperar(1.5)
-        self._esperar(1.0)
+        self._esperar(8.0)
 
         posiciones_izquierdas = {
             # Keep the hands above the tabletop while reaching inward.
@@ -328,7 +337,7 @@ class NAOMedController(object):
             motor = self.brazo_derecho[nombre]
             if motor:
                 motor.setPosition(posicion)
-        self._esperar(2.0)
+        self._esperar(3.0)
 
         # Close the fingers only part-way to hold the cube without crushing it.
         for dedo in self.dedos_izquierdos + self.dedos_derechos:
@@ -336,7 +345,7 @@ class NAOMedController(object):
                 minimo = dedo.getMinPosition()
                 maximo = dedo.getMaxPosition()
                 dedo.setPosition(maximo + 0.35 * (minimo - maximo))
-        self._esperar(0.7)
+        self._esperar(2.5)
         print("[WEBOTS] Cubo sujetado suavemente.")
 
     def levantar_brazos_con_cubo(self):
