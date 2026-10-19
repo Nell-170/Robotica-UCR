@@ -39,6 +39,7 @@ RUTA_DEBUG = os.path.normpath(os.path.join(
 # Inclinaciones de la cabeza (radianes, HeadPitch: negativo = arriba,
 # positivo = abajo; rango NAO -0.67 a 0.51).
 INCLINACIONES_CABEZA = (0.0, 0.35, 0.5, -0.3, -0.6)
+PASADAS_BARRIDO = 2
 SEGUNDOS_POR_INCLINACION = 2.0
 PAUSA_CABEZA_SEGUNDOS = 0.8
 
@@ -189,35 +190,43 @@ def identificar_cubos(ip, puerto, diagnostico=False):
 
     vistos = {}
     try:
-        for inclinacion in INCLINACIONES_CABEZA:
-            if motion:
-                try:
-                    motion.setAngles("HeadPitch", inclinacion, 0.2)
-                except Exception as e:
-                    print("Aviso: no se pudo mover la cabeza ({}).".format(e))
-                time.sleep(PAUSA_CABEZA_SEGUNDOS)
-            inicio = time.time()
-            por_medicamento = {}
-            primer_frame = True
-            while time.time() - inicio < SEGUNDOS_POR_INCLINACION:
-                try:
-                    frame = video.getImageRemote(suscripcion)
-                    if frame:
-                        ancho, alto, capas = frame[0], frame[1], frame[2]
-                        bgr = np.frombuffer(bytes(frame[6]), dtype=np.uint8).reshape((alto, ancho, capas))
-                        etiqueta = None
-                        if diagnostico and primer_frame:
-                            etiqueta = "pitch{:+.1f}".format(inclinacion)
-                            primer_frame = False
-                        for medicamento, cx in _cubos_en_frame(bgr, etiqueta):
-                            por_medicamento.setdefault(medicamento, []).append(cx)
-                except Exception as e:
-                    print("Aviso: error en identificacion de cubos ({}).".format(e))
-                    break
-                time.sleep(0.1)
-            for medicamento, xs in por_medicamento.items():
-                if len(xs) >= 3 and medicamento not in vistos:
-                    vistos[medicamento] = sum(xs) / float(len(xs))
+        for pasada in range(1, PASADAS_BARRIDO + 1):
+            for inclinacion in INCLINACIONES_CABEZA:
+                if motion:
+                    try:
+                        motion.setAngles("HeadYaw", 0.0, 0.2)
+                        motion.setAngles("HeadPitch", inclinacion, 0.2)
+                    except Exception as e:
+                        print("Aviso: no se pudo mover la cabeza ({}).".format(e))
+                    time.sleep(PAUSA_CABEZA_SEGUNDOS)
+                inicio = time.time()
+                por_medicamento = {}
+                primer_frame = True
+                while time.time() - inicio < SEGUNDOS_POR_INCLINACION:
+                    try:
+                        frame = video.getImageRemote(suscripcion)
+                        if frame:
+                            ancho, alto, capas = frame[0], frame[1], frame[2]
+                            bgr = np.frombuffer(bytes(frame[6]), dtype=np.uint8).reshape((alto, ancho, capas))
+                            etiqueta = None
+                            if diagnostico and primer_frame:
+                                etiqueta = "pitch{:+.1f}-barrido{}".format(inclinacion, pasada)
+                                primer_frame = False
+                            for medicamento, cx in _cubos_en_frame(bgr, etiqueta):
+                                por_medicamento.setdefault(medicamento, []).append(cx)
+                    except Exception as e:
+                        print("Aviso: error en identificacion de cubos ({}).".format(e))
+                        break
+                    time.sleep(0.1)
+                for medicamento, xs in por_medicamento.items():
+                    vistos.setdefault(medicamento, []).extend(xs)
+                if diagnostico:
+                    resumen = ", ".join(
+                        "{}={}".format(medicamento, len(xs))
+                        for medicamento, xs in sorted(por_medicamento.items())
+                    ) or "ninguno"
+                    print("[CUBO-DEBUG] barrido {} pitch{:+.1f} detecciones: {}".format(
+                        pasada, inclinacion, resumen))
     finally:
         try:
             video.unsubscribe(suscripcion)
@@ -225,11 +234,16 @@ def identificar_cubos(ip, puerto, diagnostico=False):
             pass
         if motion:
             try:
+                motion.setAngles("HeadYaw", 0.0, 0.2)
                 motion.setAngles("HeadPitch", 0.0, 0.2)
             except Exception:
                 pass
 
-    ordenados = sorted(vistos.items(), key=lambda par: par[1])
+    ordenados = sorted(
+        ((medicamento, sum(xs) / float(len(xs)))
+         for medicamento, xs in vistos.items() if len(xs) >= 3),
+        key=lambda par: par[1]
+    )
     return [medicamento for medicamento, _ in ordenados]
 
 
