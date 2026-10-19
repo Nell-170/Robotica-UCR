@@ -240,10 +240,16 @@ def posicion_cubo(medicamentos, medicamento):
     Solo se reconoce cuando se identificaron exactamente tres cubos (el
     acomodo habitual). Por ahora solo se actua sobre el caso "centro"; la
     senalizacion de izquierda y derecha queda pendiente.
+
+    La comparacion no distingue mayusculas/minusculas: el cronograma
+    guarda el medicamento como "Paracetamol" pero la identificacion del
+    cubo siempre devuelve nombres en minuscula.
     """
-    if medicamento not in medicamentos or len(medicamentos) != 3:
+    medicamentos_normalizados = [m.lower() for m in medicamentos]
+    medicamento = medicamento.lower()
+    if medicamento not in medicamentos_normalizados or len(medicamentos_normalizados) != 3:
         return None
-    return ("izquierda", "centro", "derecha")[medicamentos.index(medicamento)]
+    return ("izquierda", "centro", "derecha")[medicamentos_normalizados.index(medicamento)]
 
 
 def frase_cubos(medicamentos):
