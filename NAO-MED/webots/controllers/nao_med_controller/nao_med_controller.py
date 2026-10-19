@@ -28,7 +28,7 @@ SEGUNDOS_POR_INCLINACION = 2.0
 
 # Frases que dice el NAO segun el resultado de la deteccion de rostro
 # (mismo texto que usa el robot fisico en nao_controller.py).
-FRASE_ROSTRO_DETECTADO = "Te veo, que tengas un buen dia."
+FRASE_ROSTRO_DETECTADO = "Por favor sigueme, te mostrare en donde esta."
 FRASE_ROSTRO_NO_DETECTADO = "No veo a nadie, por favor acercate."
 
 # El archivo .motion viene copiado dentro del proyecto (webots/motions/) para

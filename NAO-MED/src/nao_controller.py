@@ -38,7 +38,7 @@ DURACION_ALARMA_SEGUNDOS = 2
 COLOR_LUCES_NOTIFICACION = 0x00A2FF  # azul, para llamar la atencion
 
 # Frases que dice el NAO segun el resultado de la deteccion de rostro
-FRASE_ROSTRO_DETECTADO = "Te veo, que tengas un buen dia."
+FRASE_ROSTRO_DETECTADO = "Por favor sigueme, te mostrare en donde esta."
 FRASE_ROSTRO_NO_DETECTADO = "No veo a nadie, por favor acercate."
 
 
