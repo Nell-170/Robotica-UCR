@@ -28,7 +28,7 @@ SEGUNDOS_POR_INCLINACION = 2.0
 
 # Frases que dice el NAO segun el resultado de la deteccion de rostro
 # (mismo texto que usa el robot fisico en nao_controller.py).
-FRASE_ROSTRO_DETECTADO = "Por favor sigueme, te mostrare en donde esta."
+FRASE_ROSTRO_DETECTADO = "Sigueme, te mostrare en donde esta."
 FRASE_ROSTRO_NO_DETECTADO = "No veo a nadie, por favor acercate."
 
 # El archivo .motion viene copiado dentro del proyecto (webots/motions/) para
@@ -491,9 +491,12 @@ class NAOMedController(object):
         # solo camina y notifica si ve a alguien frente al robot.
         if self.detectar_rostro():
             print("[WEBOTS] Persona detectada: el robot camina y notifica.")
-            self.caminar_hacia_frente(1.0)
             self.decir_frase(medicamento)
             self.decir(FRASE_ROSTRO_DETECTADO)
+            # Guiar a la persona hacia la mesa: girar y caminar un metro de regreso.
+            self.girar_180()
+            self._esperar(1)
+            self.caminar_hacia_frente(1.0)
         else:
             print("[WEBOTS] No se detecto a nadie: el robot no camina.")
             self.decir(FRASE_ROSTRO_NO_DETECTADO)

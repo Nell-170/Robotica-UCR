@@ -38,7 +38,7 @@ DURACION_ALARMA_SEGUNDOS = 2
 COLOR_LUCES_NOTIFICACION = 0x00A2FF  # azul, para llamar la atencion
 
 # Frases que dice el NAO segun el resultado de la deteccion de rostro
-FRASE_ROSTRO_DETECTADO = "Por favor sigueme, te mostrare en donde esta."
+FRASE_ROSTRO_DETECTADO = "Sigueme, te mostrare en donde esta."
 FRASE_ROSTRO_NO_DETECTADO = "No veo a nadie, por favor acercate."
 
 
@@ -84,6 +84,15 @@ def _caminar_hacia_frente(ip, puerto, distancia=DISTANCIA_CAMINATA_METROS):
         motion.moveTo(distancia, 0.0, 0.0)
     except Exception as e:
         print("Aviso: no se pudo mover el robot ({}).".format(e))
+
+
+def _girar_180(ip, puerto):
+    """Hace que el NAO gire 180 grados sobre si mismo (a la izquierda)."""
+    try:
+        motion = ALProxy("ALMotion", ip, puerto)
+        motion.moveTo(0.0, 0.0, 3.14159)
+    except Exception as e:
+        print("Aviso: no se pudo girar el robot ({}).".format(e))
 
 
 def _decir(ip, puerto, texto):
@@ -142,6 +151,9 @@ def notificar_medicamento(config, medicamento, diagnostico=False):
             _caminar_hacia_frente(ip, puerto)
             _decir_frase(ip, puerto, medicamento)
             _decir(ip, puerto, FRASE_ROSTRO_DETECTADO)
+            # Guiar a la persona hacia la mesa: girar y caminar un metro de regreso.
+            _girar_180(ip, puerto)
+            _caminar_hacia_frente(ip, puerto)
         else:
             print("[NAO-MED] No se detecto a nadie: el robot no camina.")
             _decir(ip, puerto, FRASE_ROSTRO_NO_DETECTADO)
