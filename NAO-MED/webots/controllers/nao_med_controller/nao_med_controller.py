@@ -651,10 +651,10 @@ class NAOMedController(object):
             self.girar_180()
             self._esperar(1)
             self.caminar_hacia_frente(1.0)
-            # Pausa para que el robot termine de asentarse (fisica/postura)
-            # antes de senalar: sin esto, el gesto y la frase pueden
-            # percibirse encimados con el final de la caminata.
-            self._esperar(1)
+            # Pausa larga para que el robot termine de caminar y asentarse
+            # antes de senalar: sin esto, el gesto y la frase ocurren
+            # encimados con el final de la caminata.
+            self._esperar(7)
             self._senalar_medicamento(medicamentos, medicamento)
         else:
             print("[WEBOTS] No se detecto a nadie: el robot no camina.")
