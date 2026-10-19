@@ -14,6 +14,11 @@ El robot no agarra nada. La secuencia es determinista:
 4. Busca a una persona: si la ve, camina hacia ella y le repite que
    medicamento toca.
 
+En el NAO real, el barrido de la cabeza y las capturas se repiten dos
+veces para aumentar la oportunidad de ver los tres cubos. Por eso la
+identificacion tarda un poco mas; usa la camara inferior, adecuada para
+los cubos cercanos.
+
 ### Los cubos y su medicamento
 
 | Cubo | Medicamento | Como lo ve la camara |
@@ -42,10 +47,15 @@ En el simulador, con Webots abierto con nao_med.wbt:
 run.bat test
 ```
 
-## Colocacion de los cubos (piso del laboratorio)
+## Colocacion de los cubos
 
-Los cubos van en el piso, en una fila frente al robot, vistos por la
-camara inferior (la del pecho, inclinada ~40 grados hacia abajo).
+Para probar con el **NAO real**, coloca los cubos sobre una caja y situalos
+a unos **40 cm del robot**. Esta colocacion es para el robot fisico; no
+cambia la configuracion del simulador descrita abajo.
+
+En el **simulador**, los cubos van en el piso, en una fila frente al
+robot, vistos por la camara inferior (la del pecho, inclinada ~40 grados
+hacia abajo).
 
 | Parametro | Valor recomendado |
 |-----------|-------------------|
