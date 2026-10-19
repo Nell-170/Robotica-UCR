@@ -30,6 +30,8 @@ from deteccion_cubo import identificar_cubos, frase_cubos, posicion_cubo
 
 # Distancia (en metros) que camina el NAO en linea recta hacia el frente
 DISTANCIA_CAMINATA_METROS = 1.0
+# Desplazamiento lateral para alinearse con el cubo izquierdo/derecho.
+DISTANCIA_PASO_LATERAL_METROS = 0.25
 
 # Duracion de la alarma sonora, en segundos
 DURACION_ALARMA_SEGUNDOS = 2
@@ -131,6 +133,18 @@ def _girar_180(ip, puerto):
         print("Aviso: no se pudo girar el robot ({}).".format(e))
 
 
+def _caminar_lateral(ip, puerto, izquierda, distancia=DISTANCIA_PASO_LATERAL_METROS):
+    """Paso lateral del NAO (y positivo = izquierda del robot) para
+    alinearse con el cubo; el robot queda mirando hacia la mesa."""
+    lado = "izquierda" if izquierda else "derecha"
+    print("[NAO-MED] Caminando {} metros hacia la {}...".format(distancia, lado))
+    try:
+        motion = ALProxy("ALMotion", ip, puerto)
+        motion.moveTo(0.0, distancia if izquierda else -distancia, 0.0)
+    except Exception as e:
+        print("Aviso: no se pudo dar el paso lateral ({}).".format(e))
+
+
 def _mover_brazo(ip, puerto, angulos):
     """Lleva el brazo derecho a la pose dada (diccionario articulacion -> radianes)."""
     try:
@@ -148,13 +162,16 @@ _GESTOS_SENALAR = {
 }
 
 
-def _senalar_medicamento(ip, puerto, medicamentos, medicamento):
-    """Levanta el brazo senalando el cubo del medicamento, en la
-    direccion que corresponda (centro/izquierda/derecha), y lo anuncia."""
+def _senalar_medicamento(ip, puerto, medicamentos, medicamento, alineado=False):
+    """Levanta el brazo senalando el cubo del medicamento y lo anuncia.
+    Con alineado=True el robot ya se coloco frente al cubo, asi que el
+    brazo apunta al frente en vez de hacia un lado."""
     posicion = posicion_cubo(medicamentos, medicamento)
     gesto = _GESTOS_SENALAR.get(posicion)
     if gesto:
         angulos, frase = gesto
+        if alineado:
+            angulos = ANGULOS_BRAZO_SENALAR
         print("[NAO-MED] El cubo del {} esta a la/en el {}: senalando.".format(medicamento, posicion))
         _mover_brazo(ip, puerto, angulos)
         _decir(ip, puerto, frase)
@@ -226,7 +243,14 @@ def notificar_medicamento(config, medicamento, diagnostico=False):
             # antes de senalar: sin esto, el gesto y la frase ocurren
             # encimados con el final de la caminata.
             time.sleep(7)
-            _senalar_medicamento(ip, puerto, medicamentos, medicamento)
+            # Alinearse con el cubo: 25 cm a un lado (el del centro no se mueve).
+            posicion = posicion_cubo(medicamentos, medicamento)
+            if posicion == "izquierda":
+                _caminar_lateral(ip, puerto, True)
+            elif posicion == "derecha":
+                _caminar_lateral(ip, puerto, False)
+            time.sleep(2)
+            _senalar_medicamento(ip, puerto, medicamentos, medicamento, alineado=True)
         else:
             print("[NAO-MED] No se detecto a nadie: el robot no camina.")
             _decir(ip, puerto, FRASE_ROSTRO_NO_DETECTADO)
