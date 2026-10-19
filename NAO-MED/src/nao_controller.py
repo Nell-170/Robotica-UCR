@@ -26,7 +26,7 @@ except ImportError:
     from naoqi_mock import ALProxy
 
 from reconocimiento import reconocer_rostro
-from deteccion_cubo import identificar_cubos, frase_cubos
+from deteccion_cubo import identificar_cubos, frase_cubos, posicion_cubo
 
 # Distancia (en metros) que camina el NAO en linea recta hacia el frente
 DISTANCIA_CAMINATA_METROS = 1.0
@@ -40,6 +40,23 @@ COLOR_LUCES_NOTIFICACION = 0x00A2FF  # azul, para llamar la atencion
 # Frases que dice el NAO segun el resultado de la deteccion de rostro
 FRASE_ROSTRO_DETECTADO = "Sigueme, te mostrare en donde esta."
 FRASE_ROSTRO_NO_DETECTADO = "No veo a nadie, por favor acercate."
+
+# Frase y pose del brazo al senalar el cubo del centro.
+FRASE_CUBO_CENTRO = "Es este, el del centro"
+ANGULOS_BRAZO_SENALAR = {
+    "RShoulderPitch": 0.0,
+    "RShoulderRoll": -0.05,
+    "RElbowYaw": 0.0,
+    "RElbowRoll": 0.03,
+    "RWristYaw": 0.0,
+}
+ANGULOS_BRAZO_REPOSO = {
+    "RShoulderPitch": 1.5497,
+    "RShoulderRoll": -0.1334,
+    "RElbowYaw": 1.1894,
+    "RElbowRoll": 0.6317,
+    "RWristYaw": -0.0323,
+}
 
 
 def _reproducir_alarma(ip, puerto):
@@ -95,6 +112,32 @@ def _girar_180(ip, puerto):
         print("Aviso: no se pudo girar el robot ({}).".format(e))
 
 
+def _mover_brazo(ip, puerto, angulos):
+    """Lleva el brazo derecho a la pose dada (diccionario articulacion -> radianes)."""
+    try:
+        motion = ALProxy("ALMotion", ip, puerto)
+        motion.setStiffnesses("RArm", 1.0)
+        motion.angleInterpolationWithSpeed(list(angulos.keys()), list(angulos.values()), 0.3)
+    except Exception as e:
+        print("Aviso: no se pudo mover el brazo ({}).".format(e))
+
+
+def _senalar_medicamento(ip, puerto, medicamentos, medicamento):
+    """Si el cubo del medicamento esta en el centro, levanta el brazo
+    senalandolo y lo anuncia. Izquierda/derecha quedan pendientes."""
+    posicion = posicion_cubo(medicamentos, medicamento)
+    if posicion == "centro":
+        print("[NAO-MED] El cubo del {} esta en el centro: senalando.".format(medicamento))
+        _mover_brazo(ip, puerto, ANGULOS_BRAZO_SENALAR)
+        _decir(ip, puerto, FRASE_CUBO_CENTRO)
+        _mover_brazo(ip, puerto, ANGULOS_BRAZO_REPOSO)
+    elif posicion in ("izquierda", "derecha"):
+        print("[NAO-MED] El cubo del {} esta a la {} (senalizacion lateral pendiente).".format(
+            medicamento, posicion))
+    else:
+        print("[NAO-MED] No se pudo determinar la posicion del cubo del {}.".format(medicamento))
+
+
 def _decir(ip, puerto, texto):
     """Hace que el NAO diga 'texto' usando ALTextToSpeech."""
     try:
@@ -142,6 +185,7 @@ def notificar_medicamento(config, medicamento, diagnostico=False):
         else:
             print("[NAO-MED] No se identifico ningun cubo.")
         _decir(ip, puerto, frase_cubos(medicamentos))
+        _senalar_medicamento(ip, puerto, medicamentos, medicamento)
 
         # La deteccion de rostro es la que activa el movimiento:
         # solo camina y notifica si ve a alguien frente al robot.

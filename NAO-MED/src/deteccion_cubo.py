@@ -233,6 +233,19 @@ def identificar_cubos(ip, puerto, diagnostico=False):
     return [medicamento for medicamento, _ in ordenados]
 
 
+def posicion_cubo(medicamentos, medicamento):
+    """Posicion del cubo del medicamento dado (izquierda/centro/derecha),
+    segun su orden de izquierda a derecha en la mesa.
+
+    Solo se reconoce cuando se identificaron exactamente tres cubos (el
+    acomodo habitual). Por ahora solo se actua sobre el caso "centro"; la
+    senalizacion de izquierda y derecha queda pendiente.
+    """
+    if medicamento not in medicamentos or len(medicamentos) != 3:
+        return None
+    return ("izquierda", "centro", "derecha")[medicamentos.index(medicamento)]
+
+
 def frase_cubos(medicamentos):
     """Frase hablada con los cubos identificados."""
     if not medicamentos:
