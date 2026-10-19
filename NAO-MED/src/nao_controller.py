@@ -16,6 +16,7 @@ vision que NAOqi ya trae integrado (ALFaceDetection). Es la que activa
 el movimiento: la caminata y el mensaje solo ocurren si hay alguien
 frente al robot.
 """
+import math
 import time
 import socket
 
@@ -32,6 +33,8 @@ from deteccion_cubo import identificar_cubos, frase_cubos, posicion_cubo
 DISTANCIA_CAMINATA_METROS = 1.0
 # Desplazamiento lateral para alinearse con el cubo izquierdo/derecho.
 DISTANCIA_PASO_LATERAL_METROS = 0.25
+TOLERANCIA_GIRO_RADIANES = math.radians(3.0)
+INTENTOS_CORRECCION_GIRO = 3
 
 # Duracion de la alarma sonora, en segundos
 DURACION_ALARMA_SEGUNDOS = 2
@@ -124,13 +127,51 @@ def _caminar_hacia_frente(ip, puerto, distancia=DISTANCIA_CAMINATA_METROS):
         print("Aviso: no se pudo mover el robot ({}).".format(e))
 
 
-def _girar_180(ip, puerto):
-    """Hace que el NAO gire 180 grados sobre si mismo (a la izquierda)."""
+def _leer_rumbo(ip, puerto):
+    """Lee la orientacion estimada por ALMotion, en radianes."""
     try:
         motion = ALProxy("ALMotion", ip, puerto)
-        motion.moveTo(0.0, 0.0, 3.14159)
+        return float(motion.getRobotPosition(True)[2])
     except Exception as e:
-        print("Aviso: no se pudo girar el robot ({}).".format(e))
+        print("Aviso: no se pudo leer la orientacion por odometria ({}).".format(e))
+        return None
+
+
+def _girar_hacia_rumbo(ip, puerto, rumbo_objetivo):
+    """Gira hasta el rumbo objetivo y corrige segun la odometria de ALMotion."""
+    try:
+        motion = ALProxy("ALMotion", ip, puerto)
+        rumbo_inicial = float(motion.getRobotPosition(True)[2])
+        rumbo_objetivo = float(rumbo_objetivo) % (2.0 * math.pi)
+        error_inicial = (rumbo_objetivo - rumbo_inicial + math.pi) % (2.0 * math.pi) - math.pi
+        print("[NAO-MED] Giro por odometria: inicio {:.1f}, objetivo {:.1f}, error {:.1f} grados.".format(
+            rumbo_inicial, rumbo_objetivo, math.degrees(error_inicial)))
+
+        for intento in range(INTENTOS_CORRECCION_GIRO + 1):
+            error = (rumbo_objetivo - float(motion.getRobotPosition(True)[2]) +
+                     math.pi) % (2.0 * math.pi) - math.pi
+            if abs(error) <= TOLERANCIA_GIRO_RADIANES:
+                print("[NAO-MED] Rumbo dentro de tolerancia: error {:.1f} grados.".format(
+                    math.degrees(error)))
+                return True
+            if intento == INTENTOS_CORRECCION_GIRO:
+                break
+            print("[NAO-MED] Giro/correccion {}: comando {:.1f} grados.".format(
+                intento + 1, math.degrees(error)))
+            motion.moveTo(0.0, 0.0, error)
+
+        error = (rumbo_objetivo - float(motion.getRobotPosition(True)[2]) +
+                 math.pi) % (2.0 * math.pi) - math.pi
+        if abs(error) <= TOLERANCIA_GIRO_RADIANES:
+            print("[NAO-MED] Rumbo dentro de tolerancia: error {:.1f} grados.".format(
+                math.degrees(error)))
+            return True
+        print("[NAO-MED] Giro no verificado: error final {:.1f} grados.".format(
+            math.degrees(error)))
+        return False
+    except Exception as e:
+        print("Aviso: no se pudo completar/verificar el giro por odometria ({}).".format(e))
+        return False
 
 
 def _caminar_lateral(ip, puerto, izquierda, distancia=DISTANCIA_PASO_LATERAL_METROS):
@@ -228,6 +269,14 @@ def notificar_medicamento(config, medicamento, diagnostico=False):
             print("[NAO-MED] No se identifico ningun cubo.")
         _decir(ip, puerto, frase_cubos(medicamentos))
 
+        # Guardar el rumbo de la mesa y apuntar a la orientacion opuesta.
+        rumbo_mesa = _leer_rumbo(ip, puerto)
+        if (rumbo_mesa is None or
+                not _girar_hacia_rumbo(ip, puerto, rumbo_mesa + math.pi)):
+            print("[NAO-MED] Se cancela la busqueda de rostro porque el giro no se verifico.")
+            _apagar_luces(ip, puerto)
+            return
+
         # La deteccion de rostro es la que activa el movimiento:
         # solo camina y notifica si ve a alguien frente al robot.
         hay_persona = reconocer_rostro(ip, puerto)
@@ -236,21 +285,23 @@ def notificar_medicamento(config, medicamento, diagnostico=False):
             _caminar_hacia_frente(ip, puerto)
             _decir_frase(ip, puerto, medicamento)
             _decir(ip, puerto, FRASE_ROSTRO_DETECTADO)
-            # Guiar a la persona hacia la mesa: girar y caminar un metro de regreso.
-            _girar_180(ip, puerto)
-            _caminar_hacia_frente(ip, puerto)
-            # Pausa larga para que el robot termine de caminar y asentarse
-            # antes de senalar: sin esto, el gesto y la frase ocurren
-            # encimados con el final de la caminata.
-            time.sleep(7)
-            # Alinearse con el cubo: 25 cm a un lado (el del centro no se mueve).
-            posicion = posicion_cubo(medicamentos, medicamento)
-            if posicion == "izquierda":
-                _caminar_lateral(ip, puerto, True)
-            elif posicion == "derecha":
-                _caminar_lateral(ip, puerto, False)
-            time.sleep(2)
-            _senalar_medicamento(ip, puerto, medicamentos, medicamento, alineado=True)
+            # Volver al rumbo original de la mesa, medido antes del primer giro.
+            if _girar_hacia_rumbo(ip, puerto, rumbo_mesa):
+                _caminar_hacia_frente(ip, puerto)
+                # Pausa larga para que el robot termine de caminar y asentarse
+                # antes de senalar: sin esto, el gesto y la frase ocurren
+                # encimados con el final de la caminata.
+                time.sleep(7)
+                # Alinearse con el cubo: 25 cm a un lado (el del centro no se mueve).
+                posicion = posicion_cubo(medicamentos, medicamento)
+                if posicion == "izquierda":
+                    _caminar_lateral(ip, puerto, True)
+                elif posicion == "derecha":
+                    _caminar_lateral(ip, puerto, False)
+                time.sleep(2)
+                _senalar_medicamento(ip, puerto, medicamentos, medicamento, alineado=True)
+            else:
+                print("[NAO-MED] No se camina hacia la mesa: el giro de regreso no se verifico.")
         else:
             print("[NAO-MED] No se detecto a nadie: el robot no camina.")
             _decir(ip, puerto, FRASE_ROSTRO_NO_DETECTADO)
