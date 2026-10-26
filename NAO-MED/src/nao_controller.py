@@ -32,10 +32,10 @@ from deteccion_cubo import identificar_cubos, frase_cubos, posicion_cubo
 # Distancia (en metros) que camina el NAO en linea recta hacia el frente
 DISTANCIA_CAMINATA_METROS = 1.0
 # Desplazamiento lateral para alinearse con el cubo izquierdo/derecho.
-DISTANCIA_PASO_LATERAL_METROS = 0.25
+DISTANCIA_PASO_LATERAL_METROS = 0.10
 TOLERANCIA_GIRO_RADIANES = math.radians(3.0)
 INTENTOS_CORRECCION_GIRO = 3
-AJUSTE_RUMBO_REGRESO_RADIANES = math.radians(120.0)
+AJUSTE_RUMBO_REGRESO_RADIANES = math.radians(45.0)
 
 # Duracion de la alarma sonora, en segundos
 DURACION_ALARMA_SEGUNDOS = 2
@@ -128,47 +128,106 @@ def _caminar_hacia_frente(ip, puerto, distancia=DISTANCIA_CAMINATA_METROS):
         print("Aviso: no se pudo mover el robot ({}).".format(e))
 
 
-def _leer_rumbo(ip, puerto):
-    """Lee la orientacion estimada por ALMotion, en radianes."""
+def _leer_rumbos(motion):
+    """Lee la pose de ALMotion basada en sensores y en comandos."""
     try:
-        motion = ALProxy("ALMotion", ip, puerto)
-        return float(motion.getRobotPosition(True)[2])
+        pose_sensores = [float(valor) for valor in motion.getRobotPosition(True)]
+        pose_comandos = [float(valor) for valor in motion.getRobotPosition(False)]
+        rumbo_sensores = pose_sensores[2]
+        rumbo_comandos = pose_comandos[2]
+        diferencia = (rumbo_sensores - rumbo_comandos + math.pi) % (2.0 * math.pi) - math.pi
+        print("[ODOMETRIA] sensores=True pose={} rumbo={:.1f} grados".format(
+            ["{:.3f}".format(valor) for valor in pose_sensores],
+            math.degrees(rumbo_sensores)))
+        print("[ODOMETRIA] sensores=False pose={} rumbo={:.1f} grados".format(
+            ["{:.3f}".format(valor) for valor in pose_comandos],
+            math.degrees(rumbo_comandos)))
+        print("[ODOMETRIA] Diferencia angular True-False: {:.1f} grados".format(
+            math.degrees(diferencia)))
+        return rumbo_sensores
     except Exception as e:
-        print("Aviso: no se pudo leer la orientacion por odometria ({}).".format(e))
+        print("Aviso: no se pudieron leer/comparar las poses de ALMotion ({}).".format(e))
         return None
 
 
-def _girar_hacia_rumbo(ip, puerto, rumbo_objetivo):
-    """Gira hasta el rumbo objetivo y corrige segun la odometria de ALMotion."""
+def _leer_rumbo(ip, puerto):
+    """Lee el rumbo del robot y registra ambas fuentes de ALMotion."""
+    try:
+        return _leer_rumbos(ALProxy("ALMotion", ip, puerto))
+    except Exception as e:
+        print("Aviso: no se pudo crear ALMotion para leer la odometria ({}).".format(e))
+        return None
+
+
+def _diferencia_angular(angulo_objetivo, angulo_actual):
+    """Diferencia angular firmada mas corta, en el rango [-pi, pi]."""
+    return (angulo_objetivo - angulo_actual + math.pi) % (2.0 * math.pi) - math.pi
+
+
+def _girar_grados(ip, puerto, grados):
+    """Solicita solo un giro relativo en grados, sin consultar la odometria."""
     try:
         motion = ALProxy("ALMotion", ip, puerto)
-        rumbo_inicial = float(motion.getRobotPosition(True)[2])
+        angulo = math.radians(float(grados))
+        print("[NAO-MED] Giro relativo solicitado: {:.1f} grados.".format(grados))
+        motion.moveTo(0.0, 0.0, angulo)
+        return True
+    except Exception as e:
+        print("Aviso: no se pudo ejecutar el giro relativo ({}).".format(e))
+        return False
+
+
+def _girar_hacia_rumbo(ip, puerto, rumbo_objetivo, sentido=None):
+    """Alcanza un rumbo usando un sentido fijo y corrigiendo con la odometria."""
+    try:
+        motion = ALProxy("ALMotion", ip, puerto)
+        rumbo_inicial = _leer_rumbos(motion)
+        if rumbo_inicial is None:
+            return False
         rumbo_objetivo = float(rumbo_objetivo) % (2.0 * math.pi)
-        error_inicial = (rumbo_objetivo - rumbo_inicial + math.pi) % (2.0 * math.pi) - math.pi
-        print("[NAO-MED] Giro por odometria: inicio {:.1f}, objetivo {:.1f}, error {:.1f} grados.".format(
-            rumbo_inicial, rumbo_objetivo, math.degrees(error_inicial)))
+        error_inicial = _diferencia_angular(rumbo_objetivo, rumbo_inicial)
+        if sentido is None:
+            sentido = 1 if error_inicial > 0.0 else -1
+        elif sentido not in (-1, 1):
+            print("Aviso: sentido de giro invalido: {}.".format(sentido))
+            return False
+        distancia = ((rumbo_objetivo - rumbo_inicial) % (2.0 * math.pi)
+                     if sentido > 0 else
+                     -((rumbo_inicial - rumbo_objetivo) % (2.0 * math.pi)))
+        print("[NAO-MED] Giro por odometria: inicio {:.1f}, objetivo {:.1f}, "
+              "comando inicial {:.1f} grados (sentido {}).".format(
+                  rumbo_inicial, rumbo_objetivo, math.degrees(distancia),
+                  "positivo" if sentido > 0 else "negativo"))
 
-        for intento in range(INTENTOS_CORRECCION_GIRO + 1):
-            error = (rumbo_objetivo - float(motion.getRobotPosition(True)[2]) +
-                     math.pi) % (2.0 * math.pi) - math.pi
-            if abs(error) <= TOLERANCIA_GIRO_RADIANES:
-                print("[NAO-MED] Rumbo dentro de tolerancia: error {:.1f} grados.".format(
-                    math.degrees(error)))
+        restante = distancia
+        rumbo_anterior = rumbo_inicial
+        max_tramos = INTENTOS_CORRECCION_GIRO + 4
+        for intento in range(max_tramos + 1):
+            if abs(restante) <= TOLERANCIA_GIRO_RADIANES:
+                print("[NAO-MED] Rumbo alcanzado en el sentido solicitado.")
                 return True
-            if intento == INTENTOS_CORRECCION_GIRO:
+            if sentido * restante < -TOLERANCIA_GIRO_RADIANES:
+                print("[NAO-MED] Se sobrepaso el objetivo; se detiene para no invertir el giro.")
+                return False
+            if intento == max_tramos:
                 break
+            tramo = sentido * min(abs(restante), math.radians(90.0))
             print("[NAO-MED] Giro/correccion {}: comando {:.1f} grados.".format(
-                intento + 1, math.degrees(error)))
-            motion.moveTo(0.0, 0.0, error)
+                intento + 1, math.degrees(tramo)))
+            motion.moveTo(0.0, 0.0, tramo)
+            rumbo_actual = _leer_rumbos(motion)
+            if rumbo_actual is None:
+                return False
+            avance = _diferencia_angular(rumbo_actual, rumbo_anterior)
+            if sentido * avance < -TOLERANCIA_GIRO_RADIANES:
+                print("[NAO-MED] La odometria indica movimiento en sentido contrario; "
+                      "se detiene la correccion.")
+                return False
+            restante -= avance
+            rumbo_anterior = rumbo_actual
 
-        error = (rumbo_objetivo - float(motion.getRobotPosition(True)[2]) +
-                 math.pi) % (2.0 * math.pi) - math.pi
-        if abs(error) <= TOLERANCIA_GIRO_RADIANES:
-            print("[NAO-MED] Rumbo dentro de tolerancia: error {:.1f} grados.".format(
-                math.degrees(error)))
-            return True
-        print("[NAO-MED] Giro no verificado: error final {:.1f} grados.".format(
-            math.degrees(error)))
+        print("[NAO-MED] Giro no completado en el sentido solicitado; "
+              "restan {:.1f} grados.".format(math.degrees(restante)))
         return False
     except Exception as e:
         print("Aviso: no se pudo completar/verificar el giro por odometria ({}).".format(e))
@@ -270,10 +329,16 @@ def notificar_medicamento(config, medicamento, diagnostico=False):
             print("[NAO-MED] No se identifico ningun cubo.")
         _decir(ip, puerto, frase_cubos(medicamentos))
 
-        # Guardar el rumbo de la mesa y apuntar a la orientacion opuesta.
+        # Guardar el rumbo de la mesa y fijar el sentido de giro hacia la persona.
         rumbo_mesa = _leer_rumbo(ip, puerto)
-        if (rumbo_mesa is None or
-                not _girar_hacia_rumbo(ip, puerto, rumbo_mesa + math.pi)):
+        if rumbo_mesa is None:
+            print("[NAO-MED] Se cancela la busqueda de rostro porque no se pudo leer el rumbo.")
+            _apagar_luces(ip, puerto)
+            return
+        rumbo_persona = rumbo_mesa + math.pi
+        error_hacia_persona = _diferencia_angular(rumbo_persona, rumbo_mesa)
+        sentido_giro = 1 if error_hacia_persona > 0.0 else -1
+        if not _girar_hacia_rumbo(ip, puerto, rumbo_persona, sentido_giro):
             print("[NAO-MED] Se cancela la busqueda de rostro porque el giro no se verifico.")
             _apagar_luces(ip, puerto)
             return
@@ -286,10 +351,14 @@ def notificar_medicamento(config, medicamento, diagnostico=False):
             _caminar_hacia_frente(ip, puerto)
             _decir_frase(ip, puerto, medicamento)
             _decir(ip, puerto, FRASE_ROSTRO_DETECTADO)
-            # El robot regreso ~60 grados a la derecha del rumbo de la mesa;
-            # sesgar el objetivo a la izquierda compensa ese error observado.
+            # Sesgo empirico a la izquierda para compensar el desvio observado
+            # a la derecha al regresar a la mesa.
             rumbo_regreso = rumbo_mesa + AJUSTE_RUMBO_REGRESO_RADIANES
-            if _girar_hacia_rumbo(ip, puerto, rumbo_regreso):
+            if _girar_hacia_rumbo(ip, puerto, rumbo_regreso, sentido_giro):
+                time.sleep(3)
+                _girar_hacia_rumbo(ip, puerto, rumbo_mesa, sentido_giro)
+                time.sleep(3)
+                _girar_grados(ip, puerto, -6)
                 _caminar_hacia_frente(ip, puerto)
                 # Pausa larga para que el robot termine de caminar y asentarse
                 # antes de senalar: sin esto, el gesto y la frase ocurren

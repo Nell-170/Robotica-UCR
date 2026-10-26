@@ -251,9 +251,9 @@ def posicion_cubo(medicamentos, medicamento):
     """Posicion del cubo del medicamento dado (izquierda/centro/derecha),
     segun su orden de izquierda a derecha en la mesa.
 
-    Solo se reconoce cuando se identificaron exactamente tres cubos (el
-    acomodo habitual). Por ahora solo se actua sobre el caso "centro"; la
-    senalizacion de izquierda y derecha queda pendiente.
+    Solo se determina cuando se identificaron exactamente tres cubos (el
+    acomodo habitual); el controlador usa esta posicion para alinearse con
+    los cubos de izquierda y derecha mediante un paso lateral.
 
     La comparacion no distingue mayusculas/minusculas: el cronograma
     guarda el medicamento como "Paracetamol" pero la identificacion del
