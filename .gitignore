@@ -57,3 +57,6 @@ graphify-out/
 .graphify_ast.json
 .graphify_cached.json
 .graphify_uncached.txt
+
+# Documentos generados (informes, reportes, etc)
+docs/
