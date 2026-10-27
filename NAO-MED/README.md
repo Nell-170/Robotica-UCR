@@ -31,6 +31,78 @@ La identificacion es por la estructura del cubo, no por el color del
 fondo: la semilla es el cubo mismo (su logo, su cuerpo o sus stickers).
 Funciona sobre piso blanco, que era un requisito del laboratorio.
 
+## Instalación de dependencias
+
+Se usan **dos entornos separados**. Los comandos siguientes se ejecutan desde
+`NAO-MED/`, en una terminal de Windows. No instalar ambos archivos de
+requirements en el mismo entorno ni actualizar el entorno del laboratorio
+sin conservar primero su configuración.
+
+| Entorno | Python comprobado localmente | Archivo | Versiones fijadas |
+|---------|------------------------------|---------|-------------------|
+| Robot físico (computadora de control) | 2.7.18, 64 bits | `requirements-robot.txt` | NumPy 1.16.6, OpenCV 4.2.0.32 |
+| Controlador de Webots | 3.13.2 | `requirements-webots.txt` | NumPy 2.2.4, OpenCV 4.11.0.86 |
+
+Estas versiones se obtuvieron del entorno instalado y se comprobaron sus
+imports. No equivalen a una validación física ni a una prueba de instalación
+desde cero. Para otras versiones de Python o plataformas hay que comprobar
+la disponibilidad de paquetes binarios y la compatibilidad.
+
+### Robot físico: Python 2.7
+
+```bat
+py -2.7 -m pip install -r requirements-robot.txt
+py -2.7 -c "import numpy, cv2; from naoqi import ALProxy; print(numpy.__version__, cv2.__version__)"
+```
+
+El SDK oficial de NAOqi **no se instala con pip**. Obtenerlo del laboratorio
+o del proveedor y configurar su ruta en `PYTHONPATH` para ese intérprete.
+Debe ser compatible con la versión de NAOqi del robot, Python 2.7 y la
+arquitectura del sistema. El archivo anterior mencionaba NAOqi 2.8.7.4;
+confirmar la versión efectiva del robot antes de elegir el SDK.
+
+Python 2.7 está fuera de soporte: mantener este entorno legado separado.
+No actualizar pip indiscriminadamente: pip 20.3.4 es la última versión
+compatible con Python 2.7. Si el SDK no se puede importar, el programa puede
+usar `naoqi_mock.py`; ese mock sirve para pruebas de lógica, **no controla el
+robot ni sustituye a Webots**. La comprobación anterior importa el SDK real
+sin enviar comandos al robot.
+
+### Simulador: Python 3 y Webots
+
+Instalar Webots R2025a por separado. Para preparar un entorno Python aislado:
+
+```bat
+py -3.13 -m venv .venv-webots
+.venv-webots\Scripts\python.exe -m pip install -r requirements-webots.txt
+.venv-webots\Scripts\python.exe -c "import numpy, cv2; print(numpy.__version__, cv2.__version__)"
+```
+
+Configurar en Webots la ruta absoluta de
+`.venv-webots\Scripts\python.exe` como comando de Python del controlador.
+Instalar paquetes en otro intérprete no los hace disponibles automáticamente
+en Webots. El módulo `controller` (con `Motion` y `Supervisor`) lo proporciona
+Webots; **no instalar un paquete homónimo con pip**. No se necesita el SDK
+NAOqi para mover el robot simulado: el proceso externo envía comandos por
+socket y el controlador dentro de Webots los ejecuta.
+
+`requirements.txt` incluye `requirements-webots.txt`: es el acceso
+predeterminado para simulación, no un archivo común a ambos entornos.
+
+**Instalación existente:** `runtime.ini` añade `webots/libs` al `PYTHONPATH`
+del controlador. Esa carpeta contiene una copia local de OpenCV; se comprobó
+la versión 4.11.0.86, coincidente con el nuevo archivo. Puede tener prioridad
+sobre lo instalado en el entorno virtual. Para diagnosticar qué copia carga
+un intérprete, consultar `cv2.__file__` y `cv2.__version__` con esa misma
+configuración. No borrar la carpeta ni mezclar binarios de distintas versiones
+de Python sin verificar su compatibilidad.
+
+`run.bat setup` conserva el mecanismo anterior: instala solo OpenCV en
+`webots/libs` usando el comando `python` y no instala NumPy. Para entornos
+nuevos, usar los comandos de requirements anteriores. Los comandos
+`run.bat start`, `test` y `schedule` usan Python 2.7 para el proceso externo;
+el controlador de Webots sigue ejecutándose con su Python 3 independiente.
+
 ## Como correr
 
 ```

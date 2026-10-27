@@ -1,20 +1,4 @@
-# Dependencias del Proyecto NAO-MED
-#
-# IMPORTANTE: NAOqi SDK (naoqi.ALProxy) NO se instala vía pip.
-#
-# Para correr en el ROBOT FÍSICO NAO:
-#   - Necesitas el "Python SDK" oficial de Aldebaran/SoftBank para NAOqi 2.8.7.4
-#   
-#   Opciones para obtenerlo:
-#   1. Portal oficial (requiere login): https://developer.softbankrobotics.com/
-#   2. Contactar a SoftBank Robotics directamente
-#   3. Preguntar en tu lab si ya tienen el SDK instalado
-#   4. Buscar forks comunitarios en GitHub (buscar "pynaoqi")
-#   
-#   Una vez descargado, agrégalo al PYTHONPATH o cópialo a la carpeta del proyecto
-#
-# Para correr en WEBOTS (simulador):
-#   - NO necesitas NAOqi SDK — el código usa naoqi_mock.py automáticamente
-#   - Solo necesitas Webots R2025a instalado
-#
-# Este archivo cubre las dependencias que sí se instalan con pip (actualmente ninguna).
+# Entorno predeterminado: simulador (Python 3.13).
+# Para el robot fisico con Python 2.7, usar requirements-robot.txt.
+# No instalar ambos archivos en el mismo entorno. Ver README.md.
+-r requirements-webots.txt
