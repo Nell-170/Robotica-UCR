@@ -5,7 +5,6 @@ from pybricks.parameters import Port
 from pybricks.tools import wait
 
 ev3 = EV3Brick()
-
 eye_right = ColorSensor(Port.S1)
 eye_left = ColorSensor(Port.S4)
 
@@ -16,5 +15,4 @@ while True:
     ev3.screen.clear()
     ev3.screen.print("Izq S4: " + str(gris_izq))
     ev3.screen.print("Der S1: " + str(gris_der))
-
     wait(200)
