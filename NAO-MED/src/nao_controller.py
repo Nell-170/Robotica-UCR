@@ -37,8 +37,11 @@ TOLERANCIA_GIRO_RADIANES = math.radians(3.0)
 INTENTOS_CORRECCION_GIRO = 3
 AJUSTE_RUMBO_REGRESO_RADIANES = math.radians(45.0)
 # Correccion visual del rumbo al regresar a la mesa: se camina por tramos
-# y entre tramos se busca el cubo del centro para apuntar hacia el.
-TRAMO_REGRESO_METROS = 0.30
+# y entre tramos se busca el cubo del centro para apuntar hacia el. Los
+# tramos se acortan al acercarse, asi se corrige mas seguido donde un
+# desvio pequeno ya importa. Si la distancia es mayor que la suma, se
+# repite el ultimo tramo.
+TRAMOS_REGRESO_METROS = (0.30, 0.25, 0.20, 0.15, 0.10)
 # Una deteccion que pida girar mas que esto se recorta: evita que un
 # falso positivo haga girar al robot hacia cualquier lado.
 CORRECCION_MAXIMA_RADIANES = math.radians(30.0)
@@ -296,7 +299,8 @@ def _regresar_a_la_mesa(ip, puerto, medicamentos, diagnostico=False,
         recorrido = 0.0
         tramo_n = 0
         while recorrido < distancia - 1e-3:
-            paso = min(TRAMO_REGRESO_METROS, distancia - recorrido)
+            largo = TRAMOS_REGRESO_METROS[min(tramo_n, len(TRAMOS_REGRESO_METROS) - 1)]
+            paso = min(largo, distancia - recorrido)
             tramo_n += 1
             print("[NAO-MED] Regreso: tramo {} de {:.2f} m ({:.2f}/{:.2f} m).".format(
                 tramo_n, paso, recorrido + paso, distancia))
