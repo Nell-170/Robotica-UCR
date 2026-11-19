@@ -46,6 +46,9 @@ RUTA_DEBUG = os.path.normpath(os.path.join(
 # del robot; rango NAO -2.08 a 2.08). Con ~56 grados de campo horizontal
 # por camara, +-0.5 rad cubre unos 115 grados frente al robot.
 GIROS_CABEZA = (0.5, 0.0, -0.5)
+# Giros para seguir un cubo mientras se camina hacia el: primero al
+# frente, que es donde deberia estar, y solo si no esta, a los lados.
+GIROS_SEGUIMIENTO = (0.0, 0.5, -0.5)
 # Inclinacion fija (HeadPitch): con las dos camaras ya no hace falta el
 # barrido vertical; la superior cubre el horizonte y la inferior el piso
 # cercano.
@@ -353,27 +356,29 @@ def _todos_vistos(vistos):
     return sum(1 for angulos in vistos.values() if len(angulos) >= DETECCIONES_MINIMAS) >= 3
 
 
-def identificar_cubos(ip, puerto, diagnostico=False):
-    """Mira con las dos camaras, barre la cabeza en horizontal, identifica
-    los cubos en frente y devuelve los medicamentos vistos, ordenados de
-    izquierda a derecha respecto al robot.
+def _barrer(ip, puerto, giros, pasadas, terminado, diagnostico=False, prefijo_debug=""):
+    """Mira con las dos camaras en cada giro de cabeza y acumula detecciones.
 
-    Se detiene en cuanto ve los tres cubos. Con diagnostico=True imprime,
-    por cada candidato, sus medidas y guarda un fotograma anotado por
-    camara y posicion en data/debug/ para afinar umbrales.
+    giros:     posiciones de HeadYaw (rad) a recorrer, en orden.
+    pasadas:   cuantas veces se recorre la lista de giros.
+    terminado: funcion(vistos) -> bool; si devuelve True se deja de barrer.
+
+    Devuelve {medicamento: [azimut (rad), ...]}, con el azimut respecto al
+    frente del robot (positivo = izquierda). Al terminar, la cabeza vuelve
+    al frente.
     """
     if not OPENCV_DISPONIBLE:
         print("[CUBO] OpenCV/numpy no disponibles: identificacion de cubos omitida.")
-        return []
+        return {}
 
     try:
         video = ALProxy("ALVideoDevice", ip, puerto)
     except Exception as e:
         print("Aviso: no se pudo abrir ALVideoDevice ({}).".format(e))
-        return []
+        return {}
     modo, suscripciones = _abrir_camaras(video)
     if modo is None:
-        return []
+        return {}
 
     try:
         motion = ALProxy("ALMotion", ip, puerto)
@@ -384,8 +389,8 @@ def identificar_cubos(ip, puerto, diagnostico=False):
 
     vistos = {}  # medicamento -> [azimut (rad), ...]
     try:
-        for pasada in range(1, PASADAS_BARRIDO + 1):
-            for giro in GIROS_CABEZA:
+        for pasada in range(1, pasadas + 1):
+            for giro in giros:
                 if motion:
                     try:
                         motion.setAngles(["HeadYaw", "HeadPitch"], [giro, INCLINACION_CABEZA], 0.2)
@@ -412,11 +417,16 @@ def identificar_cubos(ip, puerto, diagnostico=False):
                             y_minimo = _fila_horizonte(alto, pitch_cam)
                         etiqueta = None
                         if camara in pendientes_debug:
-                            etiqueta = "{}-yaw{:+.1f}-barrido{}".format(NOMBRE_CAMARA[camara], giro, pasada)
+                            etiqueta = "{}{}-yaw{:+.1f}-barrido{}".format(
+                                prefijo_debug, NOMBRE_CAMARA[camara], giro, pasada)
                             pendientes_debug.discard(camara)
                         for medicamento, cx in _cubos_en_frame(bgr, etiqueta, y_minimo):
                             por_medicamento.setdefault(medicamento, []).append(
                                 _azimut_pixel(cx, ancho, yaw_cam))
+                    # Con lo acumulado hasta ahora puede que ya alcance.
+                    parcial = dict((m, vistos.get(m, []) + a) for m, a in por_medicamento.items())
+                    if terminado(dict(vistos, **parcial)):
+                        break
                     time.sleep(0.1)
                 for medicamento, angulos in por_medicamento.items():
                     vistos.setdefault(medicamento, []).extend(angulos)
@@ -427,12 +437,10 @@ def identificar_cubos(ip, puerto, diagnostico=False):
                             math.degrees(sum(angulos) / len(angulos)))
                         for medicamento, angulos in sorted(por_medicamento.items())
                     ) or "ninguno"
-                    print("[CUBO-DEBUG] barrido {} yaw{:+.1f} detecciones: {}".format(
-                        pasada, giro, resumen))
-                if _todos_vistos(vistos):
-                    break
-            if _todos_vistos(vistos):
-                break
+                    print("[CUBO-DEBUG] {}barrido {} yaw{:+.1f} detecciones: {}".format(
+                        prefijo_debug, pasada, giro, resumen))
+                if terminado(vistos):
+                    return vistos
     finally:
         _cerrar_camaras(video, suscripciones)
         if motion:
@@ -440,6 +448,19 @@ def identificar_cubos(ip, puerto, diagnostico=False):
                 motion.setAngles(["HeadYaw", "HeadPitch"], [0.0, 0.0], 0.2)
             except Exception:
                 pass
+    return vistos
+
+
+def identificar_cubos(ip, puerto, diagnostico=False):
+    """Mira con las dos camaras, barre la cabeza en horizontal, identifica
+    los cubos en frente y devuelve los medicamentos vistos, ordenados de
+    izquierda a derecha respecto al robot.
+
+    Se detiene en cuanto ve los tres cubos. Con diagnostico=True imprime,
+    por cada candidato, sus medidas y guarda un fotograma anotado por
+    camara y posicion en data/debug/ para afinar umbrales.
+    """
+    vistos = _barrer(ip, puerto, GIROS_CABEZA, PASADAS_BARRIDO, _todos_vistos, diagnostico)
 
     # Orden de izquierda a derecha = azimut de mayor a menor.
     ordenados = sorted(
@@ -452,6 +473,26 @@ def identificar_cubos(ip, puerto, diagnostico=False):
         print("[CUBO-DEBUG] Resultado: {}".format(", ".join(
             "{} ({:+.0f} grados)".format(m, math.degrees(a)) for m, a in ordenados) or "ninguno"))
     return [medicamento for medicamento, _ in ordenados]
+
+
+def azimut_cubo(ip, puerto, medicamento, diagnostico=False, prefijo_debug="seguimiento-"):
+    """Angulo (rad) del cubo del medicamento respecto al frente del robot,
+    positivo = a la izquierda, o None si no se vio.
+
+    Pensado para corregir el rumbo mientras el robot camina hacia la mesa:
+    mira primero al frente (donde deberia estar el cubo) y solo gira la
+    cabeza a los lados si no lo encuentra. Termina en cuanto lo ve.
+    """
+    medicamento = medicamento.lower()
+
+    def _visto(vistos):
+        return len(vistos.get(medicamento, [])) >= DETECCIONES_MINIMAS
+
+    vistos = _barrer(ip, puerto, GIROS_SEGUIMIENTO, 1, _visto, diagnostico, prefijo_debug)
+    angulos = vistos.get(medicamento, [])
+    if len(angulos) < DETECCIONES_MINIMAS:
+        return None
+    return sum(angulos) / float(len(angulos))
 
 
 def posicion_cubo(medicamentos, medicamento):

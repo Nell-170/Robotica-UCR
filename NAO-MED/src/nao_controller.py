@@ -27,7 +27,7 @@ except ImportError:
     from naoqi_mock import ALProxy
 
 from reconocimiento import reconocer_rostro
-from deteccion_cubo import identificar_cubos, frase_cubos, posicion_cubo
+from deteccion_cubo import identificar_cubos, frase_cubos, posicion_cubo, azimut_cubo
 
 # Distancia (en metros) que camina el NAO en linea recta hacia el frente
 DISTANCIA_CAMINATA_METROS = 1.0
@@ -36,6 +36,15 @@ DISTANCIA_PASO_LATERAL_METROS = 0.10
 TOLERANCIA_GIRO_RADIANES = math.radians(3.0)
 INTENTOS_CORRECCION_GIRO = 3
 AJUSTE_RUMBO_REGRESO_RADIANES = math.radians(45.0)
+# Correccion visual del rumbo al regresar a la mesa: se camina por tramos
+# y entre tramos se busca el cubo del centro para apuntar hacia el.
+TRAMO_REGRESO_METROS = 0.30
+# Una deteccion que pida girar mas que esto se recorta: evita que un
+# falso positivo haga girar al robot hacia cualquier lado.
+CORRECCION_MAXIMA_RADIANES = math.radians(30.0)
+# Correccion empirica que se usaba antes de la vision; queda como
+# respaldo si no se ve el cubo del centro antes de empezar a caminar.
+CORRECCION_EMPIRICA_GRADOS = -6
 
 # Duracion de la alarma sonora, en segundos
 DURACION_ALARMA_SEGUNDOS = 2
@@ -234,6 +243,72 @@ def _girar_hacia_rumbo(ip, puerto, rumbo_objetivo, sentido=None):
         return False
 
 
+def _corregir_rumbo_con_cubo(motion, ip, puerto, medicamento, diagnostico, etiqueta):
+    """Busca el cubo y gira para quedar de frente a el.
+
+    Devuelve True si vio el cubo (haya girado o no), False si no lo vio.
+    """
+    angulo = azimut_cubo(ip, puerto, medicamento, diagnostico,
+                         prefijo_debug="regreso-{}-".format(etiqueta))
+    if angulo is None:
+        print("[NAO-MED] Rumbo ({}): no se vio el cubo {}.".format(etiqueta, medicamento))
+        return False
+    if abs(angulo) <= TOLERANCIA_GIRO_RADIANES:
+        print("[NAO-MED] Rumbo ({}): cubo {} al frente ({:+.1f} grados), sin correccion.".format(
+            etiqueta, medicamento, math.degrees(angulo)))
+        return True
+    giro = max(-CORRECCION_MAXIMA_RADIANES, min(CORRECCION_MAXIMA_RADIANES, angulo))
+    print("[NAO-MED] Rumbo ({}): cubo {} a {:+.1f} grados, se gira {:+.1f} grados.".format(
+        etiqueta, medicamento, math.degrees(angulo), math.degrees(giro)))
+    motion.moveTo(0.0, 0.0, giro)
+    return True
+
+
+def _regresar_a_la_mesa(ip, puerto, medicamentos, diagnostico=False,
+                        distancia=DISTANCIA_CAMINATA_METROS):
+    """Camina la distancia fija hacia la mesa corrigiendo el rumbo con la
+    vista: apunta al cubo del centro antes de salir y entre tramos.
+
+    Si no se conoce el cubo del centro (no se identificaron los tres) o
+    no se lo ve antes de salir, se usa la correccion empirica anterior.
+    Si se pierde de vista a mitad de camino, se sigue con el rumbo que se
+    traia.
+    """
+    centro = medicamentos[1] if len(medicamentos) == 3 else None
+    try:
+        motion = ALProxy("ALMotion", ip, puerto)
+        posture = ALProxy("ALRobotPosture", ip, puerto)
+        motion.wakeUp()
+        posture.goToPosture("StandInit", 0.5)
+    except Exception as e:
+        print("Aviso: no se pudo preparar el regreso a la mesa ({}).".format(e))
+        return
+
+    try:
+        if centro is None:
+            print("[NAO-MED] Regreso sin vision: no se conoce el cubo del centro.")
+            _girar_grados(ip, puerto, CORRECCION_EMPIRICA_GRADOS)
+        elif not _corregir_rumbo_con_cubo(motion, ip, puerto, centro, diagnostico, "inicio"):
+            print("[NAO-MED] Se usa la correccion empirica de {} grados.".format(
+                CORRECCION_EMPIRICA_GRADOS))
+            _girar_grados(ip, puerto, CORRECCION_EMPIRICA_GRADOS)
+
+        recorrido = 0.0
+        tramo_n = 0
+        while recorrido < distancia - 1e-3:
+            paso = min(TRAMO_REGRESO_METROS, distancia - recorrido)
+            tramo_n += 1
+            print("[NAO-MED] Regreso: tramo {} de {:.2f} m ({:.2f}/{:.2f} m).".format(
+                tramo_n, paso, recorrido + paso, distancia))
+            motion.moveTo(paso, 0.0, 0.0)
+            recorrido += paso
+            if centro is not None and recorrido < distancia - 1e-3:
+                _corregir_rumbo_con_cubo(motion, ip, puerto, centro, diagnostico,
+                                         "tramo{}".format(tramo_n))
+    except Exception as e:
+        print("Aviso: no se pudo completar el regreso a la mesa ({}).".format(e))
+
+
 def _caminar_lateral(ip, puerto, izquierda, distancia=DISTANCIA_PASO_LATERAL_METROS):
     """Paso lateral del NAO (y positivo = izquierda del robot) para
     alinearse con el cubo; el robot queda mirando hacia la mesa."""
@@ -358,8 +433,7 @@ def notificar_medicamento(config, medicamento, diagnostico=False):
                 time.sleep(3)
                 _girar_hacia_rumbo(ip, puerto, rumbo_mesa, sentido_giro)
                 time.sleep(3)
-                _girar_grados(ip, puerto, -6)
-                _caminar_hacia_frente(ip, puerto)
+                _regresar_a_la_mesa(ip, puerto, medicamentos, diagnostico)
                 # Pausa larga para que el robot termine de caminar y asentarse
                 # antes de senalar: sin esto, el gesto y la frase ocurren
                 # encimados con el final de la caminata.
