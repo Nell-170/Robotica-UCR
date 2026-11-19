@@ -1,0 +1,7 @@
+# Simulador: Python 3.13 (version local comprobada: 3.13.2).
+# Versiones observadas: NumPy en Python 3 y OpenCV en webots/libs.
+# Se comprobaron imports, no una ejecucion completa de Webots.
+# Webots R2025a se instala aparte y proporciona el modulo controller.
+# No instalar un paquete llamado controller ni NAOqi mediante pip.
+numpy==2.2.4
+opencv-python==4.11.0.86

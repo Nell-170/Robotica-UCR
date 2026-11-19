@@ -1,0 +1,7 @@
+# Robot fisico: Python 2.7.18 de 64 bits, en la computadora de control.
+# Versiones observadas e importadas correctamente en el entorno local.
+# Esto no certifica el funcionamiento del robot ni una instalacion nueva.
+# NAOqi SDK se instala aparte; debe coincidir con Python, arquitectura y robot.
+# No instalar estas dependencias en el entorno Python 3 de Webots.
+numpy==1.16.6
+opencv-python==4.2.0.32

@@ -14,16 +14,20 @@ Flujo:
 from robot_connector import main as conectar_robot
 from medication_scheduler import ejecutar_monitor
 from nao_controller import notificar_medicamento
+import sys
 
 
 def main():
     config = conectar_robot()
 
     def _notificar(medicamento):
-        notificar_medicamento(config, medicamento)
+        notificar_medicamento(config, medicamento, diagnostico=False)
 
     ejecutar_monitor(_notificar)
 
 
 if __name__ == "__main__":
     main()
+
+
+

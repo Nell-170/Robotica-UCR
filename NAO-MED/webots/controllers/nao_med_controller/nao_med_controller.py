@@ -7,12 +7,14 @@ nodo Nao en el mundo nao_med.wbt). Escucha comandos por socket desde
 el proceso externo (main.py -> nao_controller.py) y mueve/hace hablar
 al NAO simulado en consecuencia.
 """
+import io
+import math
 import os
 import socket
 import time
 import numpy as np
 
-from controller import Robot, Motion
+from controller import Motion, Supervisor
 
 try:
     import cv2
@@ -28,8 +30,22 @@ SEGUNDOS_POR_INCLINACION = 2.0
 
 # Frases que dice el NAO segun el resultado de la deteccion de rostro
 # (mismo texto que usa el robot fisico en nao_controller.py).
-FRASE_ROSTRO_DETECTADO = "Te veo, que tengas un buen dia."
+FRASE_ROSTRO_DETECTADO = "Sigueme, te mostrare en donde esta."
 FRASE_ROSTRO_NO_DETECTADO = "No veo a nadie, por favor acercate."
+
+# Frases y poses del brazo al senalar el cubo, segun su posicion (mismos
+# angulos que el robot real, en nao_controller.py).
+FRASE_CUBO_CENTRO = "Es este, el del centro"
+FRASE_CUBO_IZQUIERDA = "Es este, el de la izquierda"
+FRASE_CUBO_DERECHA = "Es este, el de la derecha"
+ARTICULACIONES_BRAZO = ("RShoulderPitch", "RShoulderRoll", "RElbowYaw", "RElbowRoll", "RWristYaw")
+# El brazo entero se levanta y se estira (pitch bien negativo = por
+# encima de la horizontal, codo casi sin doblar) para que se vea como
+# un senalamiento claro con todo el brazo, no solo la mano.
+ANGULOS_BRAZO_SENALAR = (-0.5, -0.05, 0.0, 0.05, 0.0)
+ANGULOS_BRAZO_SENALAR_IZQUIERDA = (-0.5, 0.3, -1.0, 0.05, 0.0)
+ANGULOS_BRAZO_SENALAR_DERECHA = (-0.5, -0.3, 0.0, 0.05, 0.0)
+ANGULOS_BRAZO_REPOSO = (1.5497, -0.1334, 1.1894, 0.6317, -0.0323)
 
 # El archivo .motion viene copiado dentro del proyecto (webots/motions/) para
 # no depender de la ruta interna de instalacion de Webots en cada maquina.
@@ -38,16 +54,59 @@ RUTA_MOTION_CAMINAR = os.path.join(
     "motions", "Forwards50.motion"
 )
 
+RUTA_MOTION_GIRAR_180 = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "motions", "TurnLeft180.motion"
+)
+RUTA_MOTION_GIRAR_40 = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "motions", "TurnLeft40.motion"
+)
+RUTA_MOTION_GIRAR_60 = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "motions", "TurnLeft60.motion"
+)
+RUTA_MOTION_GIRAR_DER_40 = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "motions", "TurnRight40.motion"
+)
+RUTA_MOTION_GIRAR_DER_60 = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "motions", "TurnRight60.motion"
+)
+RUTA_MOTION_PASO_IZQ = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "motions", "SideStepLeft.motion"
+)
+RUTA_MOTION_PASO_DER = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "motions", "SideStepRight.motion"
+)
+RUTA_MOTION_PARARSE = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "motions", "StandUpFromFront.motion"
+)
+
 RUTA_REFERENCIAS_CUBO = os.path.normpath(os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
     "..", "..", "..", "data", "cubo_referencias"
 ))
 
+# Diagnostico: aca se guardan fotogramas de la camara con los candidatos
+# marcados, para afinar los umbrales con evidencia y no a ciegas.
+RUTA_DEBUG = os.path.normpath(os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "..", "..", "..", "data", "debug"
+))
+
 
 class NAOMedController(object):
     def __init__(self):
-        self.robot = Robot()
+        self.robot = Supervisor()
         self.timestep = int(self.robot.getBasicTimeStep())
+        # Nodo del propio robot (supervisor): permite medir rumbo y altura
+        # reales, para comprobar el giro y detectar caidas.
+        self.nao = self.robot.getSelf()
 
         # Nombres reales de los dispositivos del modelo Nao de Webots
         # (verificados contra Nao.proto; no son los mismos nombres que usa
@@ -57,11 +116,27 @@ class NAOMedController(object):
             "right_eye": self._get_device_seguro("Face/Led/Right"),
         }
         self.cabeza = self._get_device_seguro("HeadPitch")
+        self.brazo_motores = [self._get_device_seguro(nombre) for nombre in ARTICULACIONES_BRAZO]
         self.motion_caminar = None
         if os.path.exists(RUTA_MOTION_CAMINAR):
             self.motion_caminar = Motion(RUTA_MOTION_CAMINAR)
         else:
             print("[WEBOTS] Aviso: no se encontro el archivo de movimiento {}".format(RUTA_MOTION_CAMINAR))
+
+        self.motion_girar = None
+        if os.path.exists(RUTA_MOTION_GIRAR_180):
+            self.motion_girar = Motion(RUTA_MOTION_GIRAR_180)
+        else:
+            print("[WEBOTS] Aviso: no se encontro el archivo de movimiento {}".format(RUTA_MOTION_GIRAR_180))
+
+        for atributo, ruta in (("motion_girar_40", RUTA_MOTION_GIRAR_40),
+                               ("motion_girar_60", RUTA_MOTION_GIRAR_60),
+                               ("motion_girar_der_40", RUTA_MOTION_GIRAR_DER_40),
+                               ("motion_girar_der_60", RUTA_MOTION_GIRAR_DER_60),
+                               ("motion_paso_izq", RUTA_MOTION_PASO_IZQ),
+                               ("motion_paso_der", RUTA_MOTION_PASO_DER),
+                               ("motion_pararse", RUTA_MOTION_PARARSE)):
+            setattr(self, atributo, Motion(ruta) if os.path.exists(ruta) else None)
 
         # Camara del Nao (rostros y cubo)
         self.camera = self._get_device_seguro("CameraTop")
@@ -131,12 +206,82 @@ class NAOMedController(object):
         print("[WEBOTS] ALARMA SONORA ({} segundos)".format(duracion))
         self._esperar(duracion)
 
+    def _rumbo_grados(self):
+        # Rumbo real del robot en grados (0 = eje +x del mundo, positivo
+        # girando a la izquierda), medido como supervisor.
+        m = self.nao.getOrientation()
+        return math.degrees(math.atan2(m[3], m[0]))
+
+    def _de_pie(self):
+        # El torso de un Nao de pie queda a ~0.34 m; caido queda mucho mas bajo.
+        return self.nao.getPosition()[2] > 0.25
+
+    def _pararse(self):
+        print("[WEBOTS] El robot esta en el piso: parandose...")
+        if not self.motion_pararse:
+            print("[WEBOTS] Aviso: no hay movimiento para pararse, se omite.")
+            return
+        self.motion_pararse.play()
+        self._esperar(self.motion_pararse.getDuration() / 1000.0 + 0.5)
+        while not self.motion_pararse.isOver():
+            if self.robot.step(self.timestep) == -1:
+                return
+        print("[WEBOTS] De pie de nuevo (rumbo {:.0f} grados).".format(self._rumbo_grados()))
+
+    def _reproducir_movimiento(self, mov):
+        mov.play()
+        self._esperar(mov.getDuration() / 1000.0 + 0.5)
+        while not mov.isOver():
+            if self.robot.step(self.timestep) == -1:
+                return
+
+    def girar_180(self):
+        """Gira el robot 180 grados y regresa solo cuando el giro termino.
+
+        Los motions son de lazo abierto: TurnLeft180 parte de una pose de
+        pies juntos y despues de caminar el robot queda con los pies en otra
+        pose, por lo que el giro puede salir corto o tirar al robot. Por eso
+        se mide el rumbo real (supervisor) y se corrige con giros de 40/60
+        grados hasta quedar a menos de 25 grados del objetivo.
+        """
+        inicio = self._rumbo_grados()
+        print("[WEBOTS] Girando 180 grados (rumbo inicial {:.0f} grados)...".format(inicio))
+        if not self.motion_girar:
+            print("[WEBOTS] Aviso: no hay movimiento de giro cargado, se omite.")
+            self._esperar(9)
+            return
+        self._reproducir_movimiento(self.motion_girar)
+        if not self._de_pie():
+            self._pararse()
+        rumbo = self._rumbo_grados()
+        falta = ((inicio + 180.0 - rumbo) + 180.0) % 360.0 - 180.0
+        intentos = 0
+        while abs(falta) > 25.0 and intentos < 3:
+            print("[WEBOTS] El giro quedo {:.0f} grados del objetivo (rumbo {:.0f}): corrigiendo...".format(
+                falta, rumbo))
+            if falta > 0:
+                mov = self.motion_girar_60 if (abs(falta) > 45 and self.motion_girar_60) else self.motion_girar_40
+            else:
+                mov = self.motion_girar_der_60 if (abs(falta) > 45 and self.motion_girar_der_60) else self.motion_girar_der_40
+            if not mov:
+                print("[WEBOTS] Aviso: no hay movimiento de correccion, se omite.")
+                break
+            self._reproducir_movimiento(mov)
+            if not self._de_pie():
+                self._pararse()
+            rumbo = self._rumbo_grados()
+            falta = ((inicio + 180.0 - rumbo) + 180.0) % 360.0 - 180.0
+            intentos += 1
+        print("[WEBOTS] Giro terminado: rumbo final {:.0f} grados.".format(rumbo))
+
     def caminar_hacia_frente(self, distancia=1.0):
         # El Nao de Webots no tiene un metodo "moveTo(distancia)" como NAOqi;
         # caminar se logra reproduciendo un archivo .motion (Forwards50.motion,
         # ~50cm por ciclo) sobre los motores de las piernas. Para aproximar
         # la distancia pedida, se reproduce el ciclo las veces necesarias.
         print("[WEBOTS] Caminando {} metros hacia el frente...".format(distancia))
+        if not self._de_pie():
+            self._pararse()
         if not self.motion_caminar:
             print("[WEBOTS] Aviso: no hay movimiento de caminata cargado, se omite.")
             self._esperar(3)
@@ -148,6 +293,92 @@ class NAOMedController(object):
             while not self.motion_caminar.isOver():
                 if self.robot.step(self.timestep) == -1:
                     return
+
+    def _reproducir_paso_lateral(self, izquierda, escala_roll=0.75, escala_tiempo=1.5, entrada=1.5):
+        ruta = RUTA_MOTION_PASO_IZQ if izquierda else RUTA_MOTION_PASO_DER
+        with io.open(ruta, encoding="utf-8") as f:
+            filas = [l.strip().split(",") for l in f if l.strip()]
+        nombres = [n for n in filas[0][2:] if "Hip" in n or "Knee" in n or "Ankle" in n]
+        columnas = dict((n, filas[0][2:].index(n)) for n in nombres)
+        poses = []
+        for fila in filas[1:]:
+            mm, ss, ms = fila[0].split(":")
+            t = (int(mm) * 60 + int(ss) + int(ms) / 1000.0) * escala_tiempo
+            vals = {}
+            for n in nombres:
+                v = float(fila[2 + columnas[n]])
+                if "Roll" in n:
+                    v *= escala_roll
+                vals[n] = v
+            poses.append((t, vals))
+        motores = dict((n, self.robot.getDevice(n)) for n in nombres)
+        sensores = {}
+        for n in nombres:
+            sensor = motores[n].getPositionSensor()
+            sensor.enable(self.timestep)
+            sensores[n] = sensor
+        self.robot.step(self.timestep)
+        actual = dict((n, sensores[n].getValue()) for n in nombres)
+        paso_ms = self.timestep / 1000.0
+        t = 0.0
+        while t < entrada:
+            a = min(t / entrada, 1.0)
+            for n in nombres:
+                motores[n].setPosition(actual[n] + (poses[0][1][n] - actual[n]) * a)
+            if self.robot.step(self.timestep) == -1:
+                return
+            t += paso_ms
+        t = 0.0
+        i = 0
+        total = poses[-1][0]
+        while t <= total:
+            while i < len(poses) - 2 and poses[i + 1][0] <= t:
+                i += 1
+            t0, v0 = poses[i]
+            t1, v1 = poses[i + 1]
+            a = 0.0 if t1 == t0 else min(max((t - t0) / (t1 - t0), 0.0), 1.0)
+            for n in nombres:
+                motores[n].setPosition(v0[n] + (v1[n] - v0[n]) * a)
+            if self.robot.step(self.timestep) == -1:
+                return
+            t += paso_ms
+
+    def _caminar_lateral(self, izquierda, distancia):
+        """Pasos laterales (izquierda/derecha del robot) hasta recorrer
+        'distancia' metros. El avance se mide con el supervisor, proyectando
+        el desplazamiento sobre el eje y local del robot (su izquierda)."""
+        lado = "izquierda" if izquierda else "derecha"
+        print("[WEBOTS] Caminando {} metros hacia la {}...".format(distancia, lado))
+        mov = self.motion_paso_izq if izquierda else self.motion_paso_der
+        if not mov:
+            print("[WEBOTS] Aviso: no hay movimiento de paso lateral, se omite.")
+            return
+        if not self._de_pie():
+            self._pararse()
+        m = self.nao.getOrientation()
+        eje_y = (m[1], m[4])
+        inicio = list(self.nao.getPosition())
+        recorrido = 0.0
+        ciclos = 0
+        while ciclos < 8:
+            self._reproducir_paso_lateral(izquierda)
+            ciclos += 1
+            pos = self.nao.getPosition()
+            recorrido = abs((pos[0] - inicio[0]) * eje_y[0] + (pos[1] - inicio[1]) * eje_y[1])
+            if not self._de_pie() or recorrido + 0.5 * (recorrido / ciclos) >= distancia:
+                break
+        print("[WEBOTS] Recorrido lateral real: {:.2f} m en {} ciclo(s) (meta {:.2f} m)".format(
+            recorrido, ciclos, distancia))
+        self._esperar(2)
+        if not self._de_pie():
+            print("[WEBOTS] El robot se cayo durante el paso lateral.")
+            self._pararse()
+
+    def caminar_hacia_izquierda(self, distancia=0.25):
+        self._caminar_lateral(True, distancia)
+
+    def caminar_hacia_derecha(self, distancia=0.25):
+        self._caminar_lateral(False, distancia)
 
     def decir(self, texto):
         # El Nao de Webots no incluye un dispositivo de audio/TTS: no hay
@@ -166,6 +397,7 @@ class NAOMedController(object):
             return True
         
         inicio = time.time()
+        print("[WEBOTS] Buscando rostro (hasta {} segundos)...".format(timeout))
         while time.time() - inicio < timeout:
             # Captura frame de la camara
             image_data = self.camera.getImage()
@@ -251,21 +483,269 @@ class NAOMedController(object):
             print("[WEBOTS] No se detecto el cubo (mejor coincidencia: {})".format(mejor_global))
         return encontrado
 
-    def ejecutar_notificacion(self, medicamento):
+    def _frame_bgr(self):
+        """Imagen actual de la camara en BGR, o None si no hay camara."""
+        if not self.camera or not OPENCV_DISPONIBLE:
+            return None
+        image_data = self.camera.getImage()
+        if not image_data:
+            return None
+        width = self.camera.getWidth()
+        height = self.camera.getHeight()
+        rgba = np.frombuffer(image_data, dtype=np.uint8).reshape((height, width, 4))
+        return rgba[:, :, [2, 1, 0]]
+
+    def _cubos_en_frame(self, bgr, etiqueta_debug=None):
+        """Clasifica los cubos del frame por su estructura, no por el fondo.
+
+        La semilla es una mancha oscura compacta (el logo del cubo blanco,
+        el cuerpo del cubo negro) o azul (los stickers del rubik). Cada
+        semilla se clasifica por lo que hay en su entorno inmediato, asi el
+        color del fondo (puerta blanca, piso claro) no participa.
+        """
+        hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
+        h, w = hsv.shape[:2]
+        saturacion = hsv[:, :, 1]
+        valor = hsv[:, :, 2]
+        tono = hsv[:, :, 0]
+        # Umbrales medidos sobre fotogramas reales de la camara del Nao en
+        # Webots (data/debug/): esa camara desvia a azul toda la escena, la
+        # madera se ve con H~108 y S~98, la cara blanca del cubo rinde
+        # V~133 y el cuerpo negro V~70-90.
+        clara = ((saturacion < 80) & (valor > 115)).astype(np.uint8)
+        oscura = (valor < 90).astype(np.uint8)
+        # Azul solo si esta muy saturado: la mesa (S~98) y la pared quedan
+        # fuera; los stickers del rubik miden S~169.
+        azul = ((tono >= 100) & (tono <= 135) & (saturacion > 120) & (valor > 60)).astype(np.uint8)
+
+        nucleo = np.ones((3, 3), np.uint8)
+        hallados = {}  # medicamento -> x del hallazgo mas a la izquierda
+        anotada = bgr.copy() if etiqueta_debug else None
+
+        def _entorno(x, y, ancho, alto):
+            """Recuadro de la mancha con un margen de 2 pixeles."""
+            return (max(x - 2, 0), max(y - 2, 0),
+                    min(x + ancho + 2, w), min(y + alto + 2, h))
+
+        # Semillas oscuras:
+        # - pequena (el logo, 8-130 px, caja hasta 16x16) rodeada de claro:
+        #   el paracetamol.
+        # - grande (200-700 px) y mayormente oscura sin azul alrededor: el
+        #   cuerpo del ibuprofeno.
+        # El cuerpo oscuro del rubik (area ~350) queda excluido porque su
+        # entorno tiene stickers azules.
+        n, _, stats, _ = cv2.connectedComponentsWithStats(
+            cv2.morphologyEx(oscura, cv2.MORPH_CLOSE, nucleo))
+        for i in range(1, n):
+            x, y, ancho, alto, area = stats[i]
+            if area < 8 or area > 700 or ancho > w * 0.5 or alto > h * 0.5:
+                continue
+            if not 0.5 < ancho / float(alto) < 2.0:
+                continue
+            if (y + alto / 2.0) > 0.85 * h:
+                continue
+            x0, y0, x1, y1 = _entorno(x, y, ancho, alto)
+            trozo = np.s_[y0:y1, x0:x1]
+            clara_ent = clara[trozo].mean()
+            oscura_ent = oscura[trozo].mean()
+            azul_ent = azul[trozo].mean()
+            medicamento = None
+            if area <= 130 and ancho <= 18 and alto <= 18 and clara_ent >= 0.25 and azul_ent < 0.12:
+                medicamento = "paracetamol"
+            elif area > 200 and oscura_ent >= 0.40 and azul_ent < 0.12:
+                medicamento = "ibuprofeno"
+            if etiqueta_debug:
+                print("[CUBO-DEBUG] {} oscuro: area={} caja={}x{} clara={:.2f} oscura={:.2f} azul={:.2f} -> {}".format(
+                    etiqueta_debug, area, ancho, alto, clara_ent, oscura_ent, azul_ent,
+                    medicamento or "descartado"))
+                cv2.rectangle(anotada, (x0, y0), (x1, y1), (0, 0, 255), 1)
+            if medicamento is None:
+                continue
+            cx = x + ancho / 2.0
+            if medicamento not in hallados or cx < hallados[medicamento]:
+                hallados[medicamento] = cx
+
+        # Semillas azules: los stickers del rubik (clonacepam). Se exige que
+        # el entorno tambien tenga azul (la cara 3x3 entera) y que la mancha
+        # sea chica: el piso, que esta camara tambien ve azulado, forma una
+        # banda de todo el ancho y queda excluida por tamano.
+        n, _, stats, _ = cv2.connectedComponentsWithStats(
+            cv2.morphologyEx(azul, cv2.MORPH_CLOSE, nucleo))
+        for i in range(1, n):
+            x, y, ancho, alto, area = stats[i]
+            if area < 8 or ancho > 40 or alto > 40:
+                continue
+            # Proporcion relajada: los stickers pueden verse como una fila
+            # (19x5 en la imagen real). La banda del piso queda excluida por
+            # el tope de ancho de arriba.
+            if not 0.25 < ancho / float(alto) < 4.0:
+                continue
+            if (y + alto / 2.0) > 0.85 * h:
+                continue
+            x0, y0, x1, y1 = _entorno(x, y, ancho, alto)
+            fraccion_azul = azul[y0:y1, x0:x1].mean()
+            if etiqueta_debug:
+                print("[CUBO-DEBUG] {} azul: area={} caja={}x{} azul={:.2f} -> {}".format(
+                    etiqueta_debug, area, ancho, alto, fraccion_azul,
+                    "clonacepam" if fraccion_azul >= 0.20 else "descartado"))
+                cv2.rectangle(anotada, (x0, y0), (x1, y1), (0, 255, 255), 1)
+            if fraccion_azul < 0.20:
+                continue
+            cx = x + ancho / 2.0
+            if "clonacepam" not in hallados or cx < hallados["clonacepam"]:
+                hallados["clonacepam"] = cx
+
+        if etiqueta_debug and anotada is not None:
+            if not os.path.isdir(RUTA_DEBUG):
+                os.makedirs(RUTA_DEBUG)
+            ruta_imagen = os.path.join(RUTA_DEBUG, "frame_{}.png".format(etiqueta_debug))
+            cv2.imwrite(ruta_imagen, anotada)
+            print("[CUBO-DEBUG] Fotograma guardado: {}".format(ruta_imagen))
+
+        return sorted(hallados.items(), key=lambda par: par[1])
+
+    def identificar_cubos(self, diagnostico=False):
+        """Barre la cabeza, identifica los cubos en frente y devuelve los
+        medicamentos vistos, ordenados de izquierda a derecha en la imagen.
+
+        Con diagnostico=True imprime, por cada candidato, sus medidas y
+        guarda un fotograma anotado en data/debug/ para afinar umbrales.
+        """
+        if not self.camera or not OPENCV_DISPONIBLE:
+            print("[WEBOTS] Identificacion de cubos no disponible (sin camara u OpenCV)")
+            return []
+
+        vistos = {}
+        for inclinacion in INCLINACIONES_CABEZA:
+            self._inclinar_cabeza(inclinacion)
+            inicio = time.time()
+            por_medicamento = {}
+            primer_frame = True
+            while time.time() - inicio < SEGUNDOS_POR_INCLINACION:
+                bgr = self._frame_bgr()
+                if bgr is not None:
+                    etiqueta = None
+                    if diagnostico and primer_frame:
+                        etiqueta = "pitch{:+.1f}".format(inclinacion)
+                        primer_frame = False
+                    for medicamento, cx in self._cubos_en_frame(bgr, etiqueta):
+                        por_medicamento.setdefault(medicamento, []).append(cx)
+                if self.robot.step(self.timestep) == -1:
+                    break
+            for medicamento, xs in por_medicamento.items():
+                if len(xs) >= 3 and medicamento not in vistos:
+                    vistos[medicamento] = sum(xs) / float(len(xs))
+            if len(vistos) == 3:
+                break
+
+        self._inclinar_cabeza(0.0)
+        ordenados = sorted(vistos.items(), key=lambda par: par[1])
+        return [medicamento for medicamento, _ in ordenados]
+
+    def identificar_cubos_con_diagnostico(self):
+        """Igual a identificar_cubos, pero con impresiones y fotogramas de
+        diagnostico. Usar solo para calibrar umbrales."""
+        return self.identificar_cubos(diagnostico=True)
+
+    def _mover_brazo(self, angulos, espera=3.0, velocidad=1.5):
+        """Lleva el brazo derecho a la pose dada (radianes por articulacion).
+
+        Se fuerza la velocidad maxima de cada motor para que el brazo
+        realmente llegue al angulo pedido dentro del tiempo de espera
+        (si no, con la velocidad por defecto puede quedarse a medio
+        camino y verse como que "casi no se levanta").
+        """
+        if not all(self.brazo_motores):
+            print("[WEBOTS] Aviso: no estan todos los motores del brazo, se omite.")
+            return
+        for motor, angulo in zip(self.brazo_motores, angulos):
+            try:
+                # Velocidad moderada: a la maxima el cambio brusco de peso
+                # puede tirar al robot, sobre todo tras un paso lateral.
+                motor.setVelocity(min(velocidad, motor.getMaxVelocity()))
+            except Exception:
+                pass
+            motor.setPosition(angulo)
+        self._esperar(espera)
+
+    def _posicion_cubo(self, medicamentos, medicamento):
+        """Posicion del cubo del medicamento dado (izquierda/centro/derecha).
+
+        Solo se reconoce con exactamente tres cubos identificados. Por
+        ahora solo se actua sobre el caso "centro". La comparacion no
+        distingue mayusculas/minusculas: el cronograma guarda el
+        medicamento como "Paracetamol" pero la identificacion del cubo
+        siempre devuelve nombres en minuscula.
+        """
+        medicamentos_normalizados = [m.lower() for m in medicamentos]
+        medicamento = medicamento.lower()
+        if medicamento not in medicamentos_normalizados or len(medicamentos_normalizados) != 3:
+            return None
+        return ("izquierda", "centro", "derecha")[medicamentos_normalizados.index(medicamento)]
+
+    _GESTOS_SENALAR = {
+        "centro": (ANGULOS_BRAZO_SENALAR, FRASE_CUBO_CENTRO),
+        "izquierda": (ANGULOS_BRAZO_SENALAR_IZQUIERDA, FRASE_CUBO_IZQUIERDA),
+        "derecha": (ANGULOS_BRAZO_SENALAR_DERECHA, FRASE_CUBO_DERECHA),
+    }
+
+    def _senalar_medicamento(self, medicamentos, medicamento, alineado=False):
+        """Levanta el brazo senalando el cubo del medicamento, en la
+        direccion que corresponda (centro/izquierda/derecha), y lo anuncia."""
+        posicion = self._posicion_cubo(medicamentos, medicamento)
+        gesto = self._GESTOS_SENALAR.get(posicion)
+        if gesto:
+            angulos, frase = gesto
+            if alineado:
+                # Ya esta frente al cubo: senala al frente, no hacia un lado.
+                angulos = ANGULOS_BRAZO_SENALAR
+            print("[WEBOTS] El cubo del {} esta a la/en el {}: senalando.".format(medicamento, posicion))
+            if not self._de_pie():
+                print("[WEBOTS] El robot esta en el piso antes de senalar: parandose...")
+                self._pararse()
+            self._mover_brazo(angulos)
+            if not self._de_pie():
+                print("[WEBOTS] El robot se cayo al levantar el brazo.")
+            self.decir(frase)
+            # Webots no tiene audio: sin esta pausa el brazo bajaria de
+            # inmediato y el gesto casi no se notaria.
+            self._esperar(2.0)
+            self._mover_brazo(ANGULOS_BRAZO_REPOSO)
+        else:
+            print("[WEBOTS] No se pudo determinar la posicion del cubo del {}.".format(medicamento))
+
+    def _frase_cubos(self, medicamentos):
+        """Frase hablada con los cubos identificados."""
+        if not medicamentos:
+            return "No veo ningun cubo"
+        if len(medicamentos) == 1:
+            return "Veo el cubo " + medicamentos[0]
+        if len(medicamentos) == 2:
+            return "Veo el cubo {} y el cubo {}".format(medicamentos[0], medicamentos[1])
+        return "Veo el cubo {}, el cubo {} y el cubo {}".format(*medicamentos)
+
+    def ejecutar_notificacion(self, medicamento, diagnostico=False):
         print("[WEBOTS] === NOTIFICACION DE MEDICAMENTO ===")
         print("[WEBOTS] Medicamento: {}".format(medicamento))
+        if diagnostico:
+            print("[WEBOTS] Modo diagnostico activo: se guardan fotogramas en data/debug/")
 
         self.reproducir_alarma(2)
         self.encender_luces()
 
-        # El cubo representa la medicina: solo se informa si se encontro,
-        # y el flujo continua igual en ambos casos.
-        if self.detectar_cubo():
-            print("[WEBOTS] Cubo detectado.")
-            self.decir("Cubo detectado")
+        # Pipeline alternativo: no se agarra el cubo. Lo primero es
+        # identificar que cubos hay en frente y decirlo.
+        medicamentos = self.identificar_cubos(diagnostico=diagnostico)
+        if medicamentos:
+            print("[WEBOTS] Cubos identificados: {}".format(", ".join(medicamentos)))
         else:
-            print("[WEBOTS] Cubo no detectado.")
-            self.decir("Cubo no detectado")
+            print("[WEBOTS] No se identifico ningun cubo.")
+        self.decir(self._frase_cubos(medicamentos))
+
+        # Girar para quedar de espaldas a la mesa (como estaba al inicio)
+        # y caminar hacia donde suele estar la persona.
+        self.girar_180()
+        self._esperar(1)
 
         # La deteccion de rostro es la que activa el movimiento:
         # solo camina y notifica si ve a alguien frente al robot.
@@ -274,6 +754,25 @@ class NAOMedController(object):
             self.caminar_hacia_frente(1.0)
             self.decir_frase(medicamento)
             self.decir(FRASE_ROSTRO_DETECTADO)
+            # Guiar a la persona hacia la mesa: girar y caminar un metro de regreso.
+            self.girar_180()
+            self._esperar(1)
+            self.caminar_hacia_frente(1.0)
+            # Pausa larga para que el robot termine de caminar y asentarse
+            # antes de senalar: sin esto, el gesto y la frase ocurren
+            # encimados con el final de la caminata.
+            self._esperar(7)
+            self.caminar_hacia_frente(1.0)
+            self._esperar(4)
+            # Alinearse con el cubo del medicamento: paso lateral de 25 cm
+            # (el cubo del centro no requiere moverse).
+            posicion = self._posicion_cubo(medicamentos, medicamento)
+            if posicion == "izquierda":
+                self.caminar_hacia_izquierda(0.25)
+            elif posicion == "derecha":
+                self.caminar_hacia_derecha(0.25)
+            self._esperar(2)
+            self._senalar_medicamento(medicamentos, medicamento, alineado=True)
         else:
             print("[WEBOTS] No se detecto a nadie: el robot no camina.")
             self.decir(FRASE_ROSTRO_NO_DETECTADO)
@@ -301,8 +800,15 @@ class NAOMedController(object):
             data = conn.recv(1024)
             comando = data.decode("utf-8").strip()
             if comando.startswith("NOTIFICAR:"):
-                medicamento = comando.split(":", 1)[1]
-                self.ejecutar_notificacion(medicamento)
+                cuerpo = comando.split(":", 1)[1]
+                diagnostico = False
+                medicamento = cuerpo
+                # Formato opcional: NOTIFICAR:Medicamento|DIAG=1
+                if "|DIAG=" in cuerpo:
+                    medicamento, bandera = cuerpo.split("|DIAG=", 1)
+                    diagnostico = bandera.strip() == "1"
+                    medicamento = medicamento.strip()
+                self.ejecutar_notificacion(medicamento, diagnostico)
                 conn.send("OK".encode("utf-8"))
             else:
                 conn.send("COMANDO_DESCONOCIDO".encode("utf-8"))
