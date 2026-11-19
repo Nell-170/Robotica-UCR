@@ -356,7 +356,8 @@ def _todos_vistos(vistos):
     return sum(1 for angulos in vistos.values() if len(angulos) >= DETECCIONES_MINIMAS) >= 3
 
 
-def _barrer(ip, puerto, giros, pasadas, terminado, diagnostico=False, prefijo_debug=""):
+def _barrer(ip, puerto, giros, pasadas, terminado, diagnostico=False, prefijo_debug="",
+            en_pixeles=False):
     """Mira con las dos camaras en cada giro de cabeza y acumula detecciones.
 
     giros:     posiciones de HeadYaw (rad) a recorrer, en orden.
@@ -364,8 +365,10 @@ def _barrer(ip, puerto, giros, pasadas, terminado, diagnostico=False, prefijo_de
     terminado: funcion(vistos) -> bool; si devuelve True se deja de barrer.
 
     Devuelve {medicamento: [azimut (rad), ...]}, con el azimut respecto al
-    frente del robot (positivo = izquierda). Al terminar, la cabeza vuelve
-    al frente.
+    frente del robot (positivo = izquierda). Con en_pixeles=True devuelve
+    en cambio el desfase horizontal del cubo respecto al centro de la
+    imagen, en pixeles de QVGA (positivo = a la derecha). Al terminar, la
+    cabeza vuelve al frente.
     """
     if not OPENCV_DISPONIBLE:
         print("[CUBO] OpenCV/numpy no disponibles: identificacion de cubos omitida.")
@@ -421,8 +424,11 @@ def _barrer(ip, puerto, giros, pasadas, terminado, diagnostico=False, prefijo_de
                                 prefijo_debug, NOMBRE_CAMARA[camara], giro, pasada)
                             pendientes_debug.discard(camara)
                         for medicamento, cx in _cubos_en_frame(bgr, etiqueta, y_minimo):
-                            por_medicamento.setdefault(medicamento, []).append(
-                                _azimut_pixel(cx, ancho, yaw_cam))
+                            if en_pixeles:
+                                valor = (cx - ancho / 2.0) * 320.0 / ancho
+                            else:
+                                valor = _azimut_pixel(cx, ancho, yaw_cam)
+                            por_medicamento.setdefault(medicamento, []).append(valor)
                     # Con lo acumulado hasta ahora puede que ya alcance.
                     parcial = dict((m, vistos.get(m, []) + a) for m, a in por_medicamento.items())
                     if terminado(dict(vistos, **parcial)):
@@ -432,9 +438,11 @@ def _barrer(ip, puerto, giros, pasadas, terminado, diagnostico=False, prefijo_de
                     vistos.setdefault(medicamento, []).extend(angulos)
                 if diagnostico:
                     resumen = ", ".join(
-                        "{}={} ({:+.0f} grados)".format(
+                        "{}={} ({:+.0f} {})".format(
                             medicamento, len(angulos),
-                            math.degrees(sum(angulos) / len(angulos)))
+                            (sum(angulos) / len(angulos)) if en_pixeles
+                            else math.degrees(sum(angulos) / len(angulos)),
+                            "px" if en_pixeles else "grados")
                         for medicamento, angulos in sorted(por_medicamento.items())
                     ) or "ninguno"
                     print("[CUBO-DEBUG] {}barrido {} yaw{:+.1f} detecciones: {}".format(
@@ -493,6 +501,26 @@ def azimut_cubo(ip, puerto, medicamento, diagnostico=False, prefijo_debug="segui
     if len(angulos) < DETECCIONES_MINIMAS:
         return None
     return sum(angulos) / float(len(angulos))
+
+
+def desfase_pixeles_cubo(ip, puerto, medicamento, diagnostico=False, prefijo_debug="final-"):
+    """Desfase horizontal (pixeles de QVGA) del cubo respecto al centro de
+    la imagen, con la cabeza mirando al frente; positivo = a la derecha.
+    None si no se ve al frente.
+
+    Sirve para el ajuste fino final: centrar el cubo en la imagen no
+    depende de que el campo de vision supuesto sea exacto.
+    """
+    medicamento = medicamento.lower()
+
+    def _visto(vistos):
+        return len(vistos.get(medicamento, [])) >= DETECCIONES_MINIMAS
+
+    vistos = _barrer(ip, puerto, (0.0,), 1, _visto, diagnostico, prefijo_debug, en_pixeles=True)
+    desfases = vistos.get(medicamento, [])
+    if len(desfases) < DETECCIONES_MINIMAS:
+        return None
+    return sum(desfases) / float(len(desfases))
 
 
 def posicion_cubo(medicamentos, medicamento):

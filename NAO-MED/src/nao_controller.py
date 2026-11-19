@@ -27,7 +27,8 @@ except ImportError:
     from naoqi_mock import ALProxy
 
 from reconocimiento import reconocer_rostro
-from deteccion_cubo import identificar_cubos, frase_cubos, posicion_cubo, azimut_cubo
+from deteccion_cubo import (identificar_cubos, frase_cubos, posicion_cubo, azimut_cubo,
+                            desfase_pixeles_cubo, FOV_HORIZONTAL_GRADOS)
 
 # Distancia (en metros) que camina el NAO en linea recta hacia el frente
 DISTANCIA_CAMINATA_METROS = 1.0
@@ -58,6 +59,12 @@ VERIFICACIONES_GIRO = 2
 # no lo desvie.
 ANTICIPAR_DESVIO = True
 ANTICIPO_MAXIMO_RADIANES = math.radians(10.0)
+# Ajuste fino al terminar de caminar (antes del paso lateral): se gira
+# hasta que el cubo del centro quede centrado en la imagen. La tolerancia
+# esta en pixeles de QVGA (320 de ancho; ~1.4 grados con 8 px): giros mas
+# chicos el NAO no los ejecuta bien.
+TOLERANCIA_FINAL_PIXELES = 8
+INTENTOS_AJUSTE_FINAL = 3
 
 # Duracion de la alarma sonora, en segundos
 DURACION_ALARMA_SEGUNDOS = 2
@@ -307,6 +314,35 @@ def _girar_hacia_cubo(motion, ip, puerto, medicamento, diagnostico, etiqueta,
     return angulo
 
 
+def _ajuste_final_pixeles(motion, ip, puerto, medicamento, diagnostico=False):
+    """Ajuste fino al terminar de caminar: gira hasta que el cubo quede
+    centrado en la imagen (cabeza al frente), repitiendo hasta
+    INTENTOS_AJUSTE_FINAL veces.
+
+    El campo de vision solo se usa para estimar cuanto girar en cada
+    intento; si esta un poco errado, los intentos siguientes lo corrigen,
+    porque lo que se compara es la posicion del cubo en la imagen.
+    """
+    focal = (320 / 2.0) / math.tan(math.radians(FOV_HORIZONTAL_GRADOS) / 2.0)
+    for intento in range(1, INTENTOS_AJUSTE_FINAL + 1):
+        desfase = desfase_pixeles_cubo(ip, puerto, medicamento, diagnostico,
+                                       prefijo_debug="regreso-final{}-".format(intento))
+        if desfase is None:
+            print("[NAO-MED] Ajuste final: no se ve el cubo {} al frente.".format(medicamento))
+            return
+        if abs(desfase) <= TOLERANCIA_FINAL_PIXELES:
+            print("[NAO-MED] Ajuste final: cubo {} centrado ({:+.1f} px).".format(medicamento, desfase))
+            return
+        # Cubo a la derecha de la imagen (desfase positivo) -> girar a la
+        # derecha (angulo negativo).
+        giro = -math.atan(desfase / focal)
+        giro = max(-CORRECCION_MAXIMA_RADIANES, min(CORRECCION_MAXIMA_RADIANES, giro))
+        print("[NAO-MED] Ajuste final {}: cubo a {:+.1f} px del centro, se gira {:+.1f} grados.".format(
+            intento, desfase, math.degrees(giro)))
+        motion.moveTo(0.0, 0.0, giro)
+    print("[NAO-MED] Ajuste final: se agotaron los intentos.")
+
+
 def _regresar_a_la_mesa(ip, puerto, medicamentos, diagnostico=False,
                         distancia=DISTANCIA_CAMINATA_METROS):
     """Camina la distancia fija hacia la mesa corrigiendo el rumbo con la
@@ -386,6 +422,9 @@ def _regresar_a_la_mesa(ip, puerto, medicamentos, diagnostico=False,
                       "anticipo {:+.1f} grados.".format(math.degrees(promedio), math.degrees(anticipo)))
             cubo_al_salir = _girar_hacia_cubo(motion, ip, puerto, centro, diagnostico, etiqueta,
                                               objetivo=anticipo, angulo=cubo_al_llegar)
+
+        if centro is not None:
+            _ajuste_final_pixeles(motion, ip, puerto, centro, diagnostico)
     except Exception as e:
         print("Aviso: no se pudo completar el regreso a la mesa ({}).".format(e))
 
