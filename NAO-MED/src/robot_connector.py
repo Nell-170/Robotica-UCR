@@ -112,6 +112,20 @@ def main():
     if check_nao_connection(NAO_IP, NAO_PORT):
         print("[OK] NAO detectado en {}".format(NAO_IP))
         config = get_robot_connection(use_simulator=False)
+        # Que el NAO responda en la red no basta: para mandarle ordenes
+        # hace falta el SDK de NAOqi en este Python. Sin el, los modulos
+        # usan naoqi_mock y el robot real NO hace nada.
+        try:
+            import naoqi  # noqa: F401
+        except ImportError:
+            print("!" * 60)
+            print("[AVISO] El NAO responde en la red, pero este Python no encuentra")
+            print("        el SDK de NAOqi ('import naoqi' fallo).")
+            print("        Se usara naoqi_mock: el robot real NO se va a mover ni")
+            print("        se va a usar su camara. Agrega la carpeta del SDK")
+            print("        (la que contiene naoqi.py) a PYTHONPATH.")
+            print("        Python usado: {}".format(sys.executable))
+            print("!" * 60)
     else:
         print("[ERROR] NAO no detectado en {}".format(NAO_IP))
         print("[INFO] Abriendo simulador Webots...")
