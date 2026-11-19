@@ -27,7 +27,8 @@ except ImportError:
     from naoqi_mock import ALProxy
 
 from reconocimiento import reconocer_rostro
-from deteccion_cubo import identificar_cubos, frase_cubos, posicion_cubo
+from deteccion_cubo import (identificar_cubos, frase_cubos, posicion_cubo, azimut_cubo,
+                            desfase_pixeles_cubo, FOV_HORIZONTAL_GRADOS)
 
 # Distancia (en metros) que camina el NAO en linea recta hacia el frente
 DISTANCIA_CAMINATA_METROS = 1.0
@@ -36,6 +37,34 @@ DISTANCIA_PASO_LATERAL_METROS = 0.10
 TOLERANCIA_GIRO_RADIANES = math.radians(3.0)
 INTENTOS_CORRECCION_GIRO = 3
 AJUSTE_RUMBO_REGRESO_RADIANES = math.radians(45.0)
+# Correccion visual del rumbo al regresar a la mesa: se camina por tramos
+# y entre tramos se busca el cubo del centro para apuntar hacia el. Los
+# tramos se acortan al acercarse, asi se corrige mas seguido donde un
+# desvio pequeno ya importa. Si la distancia es mayor que la suma, se
+# repite el ultimo tramo.
+TRAMOS_REGRESO_METROS = (0.30, 0.25, 0.20, 0.15, 0.10)
+# Una deteccion que pida girar mas que esto se recorta: evita que un
+# falso positivo haga girar al robot hacia cualquier lado.
+CORRECCION_MAXIMA_RADIANES = math.radians(30.0)
+# Correccion empirica que se usaba antes de la vision; queda como
+# respaldo si no se ve el cubo del centro antes de empezar a caminar.
+CORRECCION_EMPIRICA_GRADOS = -6
+# Tras cada giro hacia el cubo se vuelve a mirar para verificar que el
+# cuerpo quedo donde se pidio; si no, se corrige lo que falte. Este es el
+# maximo de verificaciones por giro.
+VERIFICACIONES_GIRO = 2
+# Compensacion anticipada (control integral): el robot aprende cuanto se
+# tuerce al caminar y sale de cada tramo apuntando hacia el lado
+# contrario. El anticipo por tramo se limita para que una mala deteccion
+# no lo desvie.
+ANTICIPAR_DESVIO = True
+ANTICIPO_MAXIMO_RADIANES = math.radians(10.0)
+# Ajuste fino al terminar de caminar (antes del paso lateral): se gira
+# hasta que el cubo del centro quede centrado en la imagen. La tolerancia
+# esta en pixeles de QVGA (320 de ancho; ~1.4 grados con 8 px): giros mas
+# chicos el NAO no los ejecuta bien.
+TOLERANCIA_FINAL_PIXELES = 8
+INTENTOS_AJUSTE_FINAL = 3
 
 # Duracion de la alarma sonora, en segundos
 DURACION_ALARMA_SEGUNDOS = 2
@@ -234,6 +263,172 @@ def _girar_hacia_rumbo(ip, puerto, rumbo_objetivo, sentido=None):
         return False
 
 
+def _medir_cubo(ip, puerto, medicamento, diagnostico, etiqueta):
+    """Angulo (rad) del cubo respecto al frente del CUERPO del robot.
+
+    Combina hacia donde apunta la cabeza respecto al cuerpo (HeadYaw) con
+    donde aparece el cubo en la imagen. Positivo = a la izquierda.
+    """
+    angulo = azimut_cubo(ip, puerto, medicamento, diagnostico,
+                         prefijo_debug="regreso-{}-".format(etiqueta))
+    if angulo is None:
+        print("[NAO-MED] Rumbo ({}): no se vio el cubo {}.".format(etiqueta, medicamento))
+    else:
+        print("[NAO-MED] Rumbo ({}): cubo {} a {:+.1f} grados del cuerpo.".format(
+            etiqueta, medicamento, math.degrees(angulo)))
+    return angulo
+
+
+def _girar_hacia_cubo(motion, ip, puerto, medicamento, diagnostico, etiqueta,
+                      objetivo=0.0, angulo=None):
+    """Gira el cuerpo hasta que el cubo quede a 'objetivo' rad de su frente
+    y VERIFICA el giro volviendo a mirar el cubo; si el giro quedo corto o
+    se paso, corrige lo que falte (hasta VERIFICACIONES_GIRO veces).
+
+    'angulo' es una medicion ya hecha del cubo (si no, se mide aca).
+    Devuelve el angulo del cubo al terminar (medido, o estimado si la
+    ultima verificacion no lo vio), o None si no se vio el cubo al inicio.
+    """
+    if angulo is None:
+        angulo = _medir_cubo(ip, puerto, medicamento, diagnostico, etiqueta)
+        if angulo is None:
+            return None
+    for intento in range(VERIFICACIONES_GIRO + 1):
+        error = angulo - objetivo
+        if abs(error) <= TOLERANCIA_GIRO_RADIANES:
+            return angulo
+        giro = max(-CORRECCION_MAXIMA_RADIANES, min(CORRECCION_MAXIMA_RADIANES, error))
+        print("[NAO-MED] Rumbo ({}): objetivo {:+.1f} grados, se gira {:+.1f} grados.".format(
+            etiqueta, math.degrees(objetivo), math.degrees(giro)))
+        motion.moveTo(0.0, 0.0, giro)
+        estimado = angulo - giro
+        if intento == VERIFICACIONES_GIRO:
+            return estimado
+        nuevo = _medir_cubo(ip, puerto, medicamento, diagnostico,
+                            "{}-verif{}".format(etiqueta, intento + 1))
+        if nuevo is None:
+            return estimado
+        print("[NAO-MED] Rumbo ({}): el giro real fue {:+.1f} grados (pedido {:+.1f}).".format(
+            etiqueta, math.degrees(angulo - nuevo), math.degrees(giro)))
+        angulo = nuevo
+    return angulo
+
+
+def _ajuste_final_pixeles(motion, ip, puerto, medicamento, diagnostico=False):
+    """Ajuste fino al terminar de caminar: gira hasta que el cubo quede
+    centrado en la imagen (cabeza al frente), repitiendo hasta
+    INTENTOS_AJUSTE_FINAL veces.
+
+    El campo de vision solo se usa para estimar cuanto girar en cada
+    intento; si esta un poco errado, los intentos siguientes lo corrigen,
+    porque lo que se compara es la posicion del cubo en la imagen.
+    """
+    focal = (320 / 2.0) / math.tan(math.radians(FOV_HORIZONTAL_GRADOS) / 2.0)
+    for intento in range(1, INTENTOS_AJUSTE_FINAL + 1):
+        desfase = desfase_pixeles_cubo(ip, puerto, medicamento, diagnostico,
+                                       prefijo_debug="regreso-final{}-".format(intento))
+        if desfase is None:
+            print("[NAO-MED] Ajuste final: no se ve el cubo {} al frente.".format(medicamento))
+            return
+        if abs(desfase) <= TOLERANCIA_FINAL_PIXELES:
+            print("[NAO-MED] Ajuste final: cubo {} centrado ({:+.1f} px).".format(medicamento, desfase))
+            return
+        # Cubo a la derecha de la imagen (desfase positivo) -> girar a la
+        # derecha (angulo negativo).
+        giro = -math.atan(desfase / focal)
+        giro = max(-CORRECCION_MAXIMA_RADIANES, min(CORRECCION_MAXIMA_RADIANES, giro))
+        print("[NAO-MED] Ajuste final {}: cubo a {:+.1f} px del centro, se gira {:+.1f} grados.".format(
+            intento, desfase, math.degrees(giro)))
+        motion.moveTo(0.0, 0.0, giro)
+    print("[NAO-MED] Ajuste final: se agotaron los intentos.")
+
+
+def _regresar_a_la_mesa(ip, puerto, medicamentos, diagnostico=False,
+                        distancia=DISTANCIA_CAMINATA_METROS):
+    """Camina la distancia fija hacia la mesa corrigiendo el rumbo con la
+    vista: apunta al cubo del centro antes de salir y entre tramos.
+
+    Ademas aprende el desvio del robot al caminar (cuanto se tuerce por
+    metro, promediando lo observado en los tramos) y se anticipa: sale de
+    cada tramo apuntando un poco hacia el lado contrario, para que el
+    desvio lo deje de frente al cubo. Se reinicia en cada regreso.
+
+    Si no se conoce el cubo del centro (no se identificaron los tres) o
+    no se lo ve antes de salir, se usa la correccion empirica anterior.
+    Si se pierde de vista a mitad de camino, se sigue con el rumbo que se
+    traia.
+    """
+    centro = medicamentos[1] if len(medicamentos) == 3 else None
+    try:
+        motion = ALProxy("ALMotion", ip, puerto)
+        posture = ALProxy("ALRobotPosture", ip, puerto)
+        motion.wakeUp()
+        posture.goToPosture("StandInit", 0.5)
+    except Exception as e:
+        print("Aviso: no se pudo preparar el regreso a la mesa ({}).".format(e))
+        return
+
+    try:
+        # Angulo del cubo al empezar el tramo actual (None = desconocido).
+        cubo_al_salir = None
+        if centro is None:
+            print("[NAO-MED] Regreso sin vision: no se conoce el cubo del centro.")
+        else:
+            cubo_al_salir = _girar_hacia_cubo(motion, ip, puerto, centro, diagnostico, "inicio")
+        if cubo_al_salir is None:
+            print("[NAO-MED] Se usa la correccion empirica de {} grados.".format(
+                CORRECCION_EMPIRICA_GRADOS))
+            _girar_grados(ip, puerto, CORRECCION_EMPIRICA_GRADOS)
+
+        desvios_por_metro = []  # cuanto se torcio el robot por metro en cada tramo
+        recorrido = 0.0
+        tramo_n = 0
+        while recorrido < distancia - 1e-3:
+            largo = TRAMOS_REGRESO_METROS[min(tramo_n, len(TRAMOS_REGRESO_METROS) - 1)]
+            paso = min(largo, distancia - recorrido)
+            tramo_n += 1
+            print("[NAO-MED] Regreso: tramo {} de {:.2f} m ({:.2f}/{:.2f} m).".format(
+                tramo_n, paso, recorrido + paso, distancia))
+            motion.moveTo(paso, 0.0, 0.0)
+            recorrido += paso
+            if centro is None or recorrido >= distancia - 1e-3:
+                continue
+
+            etiqueta = "tramo{}".format(tramo_n)
+            cubo_al_llegar = _medir_cubo(ip, puerto, centro, diagnostico, etiqueta)
+            if cubo_al_llegar is None:
+                cubo_al_salir = None
+                continue
+
+            # Si el robot camino recto, el cubo deberia seguir donde estaba
+            # al salir; lo que se movio es lo que el robot se torcio.
+            if cubo_al_salir is not None:
+                desvio = cubo_al_salir - cubo_al_llegar
+                desvios_por_metro.append(desvio / paso)
+                print("[NAO-MED] Regreso: en el tramo {} el robot se torcio {:+.1f} grados.".format(
+                    tramo_n, math.degrees(desvio)))
+
+            # Anticipo para el proximo tramo: el desvio esperado segun lo
+            # aprendido. Se sale con el cubo a ese angulo y, al torcerse,
+            # el robot queda de frente.
+            anticipo = 0.0
+            if ANTICIPAR_DESVIO and desvios_por_metro:
+                siguiente = TRAMOS_REGRESO_METROS[min(tramo_n, len(TRAMOS_REGRESO_METROS) - 1)]
+                siguiente = min(siguiente, distancia - recorrido)
+                promedio = sum(desvios_por_metro) / float(len(desvios_por_metro))
+                anticipo = max(-ANTICIPO_MAXIMO_RADIANES,
+                               min(ANTICIPO_MAXIMO_RADIANES, promedio * siguiente))
+                print("[NAO-MED] Regreso: desvio aprendido {:+.1f} grados/m, "
+                      "anticipo {:+.1f} grados.".format(math.degrees(promedio), math.degrees(anticipo)))
+            cubo_al_salir = _girar_hacia_cubo(motion, ip, puerto, centro, diagnostico, etiqueta,
+                                              objetivo=anticipo, angulo=cubo_al_llegar)
+
+        if centro is not None:
+            _ajuste_final_pixeles(motion, ip, puerto, centro, diagnostico)
+    except Exception as e:
+        print("Aviso: no se pudo completar el regreso a la mesa ({}).".format(e))
+
+
 def _caminar_lateral(ip, puerto, izquierda, distancia=DISTANCIA_PASO_LATERAL_METROS):
     """Paso lateral del NAO (y positivo = izquierda del robot) para
     alinearse con el cubo; el robot queda mirando hacia la mesa."""
@@ -358,8 +553,7 @@ def notificar_medicamento(config, medicamento, diagnostico=False):
                 time.sleep(3)
                 _girar_hacia_rumbo(ip, puerto, rumbo_mesa, sentido_giro)
                 time.sleep(3)
-                _girar_grados(ip, puerto, -6)
-                _caminar_hacia_frente(ip, puerto)
+                _regresar_a_la_mesa(ip, puerto, medicamentos, diagnostico)
                 # Pausa larga para que el robot termine de caminar y asentarse
                 # antes de senalar: sin esto, el gesto y la frase ocurren
                 # encimados con el final de la caminata.
