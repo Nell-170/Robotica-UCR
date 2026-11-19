@@ -48,6 +48,16 @@ CORRECCION_MAXIMA_RADIANES = math.radians(30.0)
 # Correccion empirica que se usaba antes de la vision; queda como
 # respaldo si no se ve el cubo del centro antes de empezar a caminar.
 CORRECCION_EMPIRICA_GRADOS = -6
+# Tras cada giro hacia el cubo se vuelve a mirar para verificar que el
+# cuerpo quedo donde se pidio; si no, se corrige lo que falte. Este es el
+# maximo de verificaciones por giro.
+VERIFICACIONES_GIRO = 2
+# Compensacion anticipada (control integral): el robot aprende cuanto se
+# tuerce al caminar y sale de cada tramo apuntando hacia el lado
+# contrario. El anticipo por tramo se limita para que una mala deteccion
+# no lo desvie.
+ANTICIPAR_DESVIO = True
+ANTICIPO_MAXIMO_RADIANES = math.radians(10.0)
 
 # Duracion de la alarma sonora, en segundos
 DURACION_ALARMA_SEGUNDOS = 2
@@ -246,31 +256,66 @@ def _girar_hacia_rumbo(ip, puerto, rumbo_objetivo, sentido=None):
         return False
 
 
-def _corregir_rumbo_con_cubo(motion, ip, puerto, medicamento, diagnostico, etiqueta):
-    """Busca el cubo y gira para quedar de frente a el.
+def _medir_cubo(ip, puerto, medicamento, diagnostico, etiqueta):
+    """Angulo (rad) del cubo respecto al frente del CUERPO del robot.
 
-    Devuelve True si vio el cubo (haya girado o no), False si no lo vio.
+    Combina hacia donde apunta la cabeza respecto al cuerpo (HeadYaw) con
+    donde aparece el cubo en la imagen. Positivo = a la izquierda.
     """
     angulo = azimut_cubo(ip, puerto, medicamento, diagnostico,
                          prefijo_debug="regreso-{}-".format(etiqueta))
     if angulo is None:
         print("[NAO-MED] Rumbo ({}): no se vio el cubo {}.".format(etiqueta, medicamento))
-        return False
-    if abs(angulo) <= TOLERANCIA_GIRO_RADIANES:
-        print("[NAO-MED] Rumbo ({}): cubo {} al frente ({:+.1f} grados), sin correccion.".format(
+    else:
+        print("[NAO-MED] Rumbo ({}): cubo {} a {:+.1f} grados del cuerpo.".format(
             etiqueta, medicamento, math.degrees(angulo)))
-        return True
-    giro = max(-CORRECCION_MAXIMA_RADIANES, min(CORRECCION_MAXIMA_RADIANES, angulo))
-    print("[NAO-MED] Rumbo ({}): cubo {} a {:+.1f} grados, se gira {:+.1f} grados.".format(
-        etiqueta, medicamento, math.degrees(angulo), math.degrees(giro)))
-    motion.moveTo(0.0, 0.0, giro)
-    return True
+    return angulo
+
+
+def _girar_hacia_cubo(motion, ip, puerto, medicamento, diagnostico, etiqueta,
+                      objetivo=0.0, angulo=None):
+    """Gira el cuerpo hasta que el cubo quede a 'objetivo' rad de su frente
+    y VERIFICA el giro volviendo a mirar el cubo; si el giro quedo corto o
+    se paso, corrige lo que falte (hasta VERIFICACIONES_GIRO veces).
+
+    'angulo' es una medicion ya hecha del cubo (si no, se mide aca).
+    Devuelve el angulo del cubo al terminar (medido, o estimado si la
+    ultima verificacion no lo vio), o None si no se vio el cubo al inicio.
+    """
+    if angulo is None:
+        angulo = _medir_cubo(ip, puerto, medicamento, diagnostico, etiqueta)
+        if angulo is None:
+            return None
+    for intento in range(VERIFICACIONES_GIRO + 1):
+        error = angulo - objetivo
+        if abs(error) <= TOLERANCIA_GIRO_RADIANES:
+            return angulo
+        giro = max(-CORRECCION_MAXIMA_RADIANES, min(CORRECCION_MAXIMA_RADIANES, error))
+        print("[NAO-MED] Rumbo ({}): objetivo {:+.1f} grados, se gira {:+.1f} grados.".format(
+            etiqueta, math.degrees(objetivo), math.degrees(giro)))
+        motion.moveTo(0.0, 0.0, giro)
+        estimado = angulo - giro
+        if intento == VERIFICACIONES_GIRO:
+            return estimado
+        nuevo = _medir_cubo(ip, puerto, medicamento, diagnostico,
+                            "{}-verif{}".format(etiqueta, intento + 1))
+        if nuevo is None:
+            return estimado
+        print("[NAO-MED] Rumbo ({}): el giro real fue {:+.1f} grados (pedido {:+.1f}).".format(
+            etiqueta, math.degrees(angulo - nuevo), math.degrees(giro)))
+        angulo = nuevo
+    return angulo
 
 
 def _regresar_a_la_mesa(ip, puerto, medicamentos, diagnostico=False,
                         distancia=DISTANCIA_CAMINATA_METROS):
     """Camina la distancia fija hacia la mesa corrigiendo el rumbo con la
     vista: apunta al cubo del centro antes de salir y entre tramos.
+
+    Ademas aprende el desvio del robot al caminar (cuanto se tuerce por
+    metro, promediando lo observado en los tramos) y se anticipa: sale de
+    cada tramo apuntando un poco hacia el lado contrario, para que el
+    desvio lo deje de frente al cubo. Se reinicia en cada regreso.
 
     Si no se conoce el cubo del centro (no se identificaron los tres) o
     no se lo ve antes de salir, se usa la correccion empirica anterior.
@@ -288,14 +333,18 @@ def _regresar_a_la_mesa(ip, puerto, medicamentos, diagnostico=False,
         return
 
     try:
+        # Angulo del cubo al empezar el tramo actual (None = desconocido).
+        cubo_al_salir = None
         if centro is None:
             print("[NAO-MED] Regreso sin vision: no se conoce el cubo del centro.")
-            _girar_grados(ip, puerto, CORRECCION_EMPIRICA_GRADOS)
-        elif not _corregir_rumbo_con_cubo(motion, ip, puerto, centro, diagnostico, "inicio"):
+        else:
+            cubo_al_salir = _girar_hacia_cubo(motion, ip, puerto, centro, diagnostico, "inicio")
+        if cubo_al_salir is None:
             print("[NAO-MED] Se usa la correccion empirica de {} grados.".format(
                 CORRECCION_EMPIRICA_GRADOS))
             _girar_grados(ip, puerto, CORRECCION_EMPIRICA_GRADOS)
 
+        desvios_por_metro = []  # cuanto se torcio el robot por metro en cada tramo
         recorrido = 0.0
         tramo_n = 0
         while recorrido < distancia - 1e-3:
@@ -306,9 +355,37 @@ def _regresar_a_la_mesa(ip, puerto, medicamentos, diagnostico=False,
                 tramo_n, paso, recorrido + paso, distancia))
             motion.moveTo(paso, 0.0, 0.0)
             recorrido += paso
-            if centro is not None and recorrido < distancia - 1e-3:
-                _corregir_rumbo_con_cubo(motion, ip, puerto, centro, diagnostico,
-                                         "tramo{}".format(tramo_n))
+            if centro is None or recorrido >= distancia - 1e-3:
+                continue
+
+            etiqueta = "tramo{}".format(tramo_n)
+            cubo_al_llegar = _medir_cubo(ip, puerto, centro, diagnostico, etiqueta)
+            if cubo_al_llegar is None:
+                cubo_al_salir = None
+                continue
+
+            # Si el robot camino recto, el cubo deberia seguir donde estaba
+            # al salir; lo que se movio es lo que el robot se torcio.
+            if cubo_al_salir is not None:
+                desvio = cubo_al_salir - cubo_al_llegar
+                desvios_por_metro.append(desvio / paso)
+                print("[NAO-MED] Regreso: en el tramo {} el robot se torcio {:+.1f} grados.".format(
+                    tramo_n, math.degrees(desvio)))
+
+            # Anticipo para el proximo tramo: el desvio esperado segun lo
+            # aprendido. Se sale con el cubo a ese angulo y, al torcerse,
+            # el robot queda de frente.
+            anticipo = 0.0
+            if ANTICIPAR_DESVIO and desvios_por_metro:
+                siguiente = TRAMOS_REGRESO_METROS[min(tramo_n, len(TRAMOS_REGRESO_METROS) - 1)]
+                siguiente = min(siguiente, distancia - recorrido)
+                promedio = sum(desvios_por_metro) / float(len(desvios_por_metro))
+                anticipo = max(-ANTICIPO_MAXIMO_RADIANES,
+                               min(ANTICIPO_MAXIMO_RADIANES, promedio * siguiente))
+                print("[NAO-MED] Regreso: desvio aprendido {:+.1f} grados/m, "
+                      "anticipo {:+.1f} grados.".format(math.degrees(promedio), math.degrees(anticipo)))
+            cubo_al_salir = _girar_hacia_cubo(motion, ip, puerto, centro, diagnostico, etiqueta,
+                                              objetivo=anticipo, angulo=cubo_al_llegar)
     except Exception as e:
         print("Aviso: no se pudo completar el regreso a la mesa ({}).".format(e))
 
