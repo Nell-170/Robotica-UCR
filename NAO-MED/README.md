@@ -237,19 +237,27 @@ la vista semanal resalta el día y la hora del NAO, que es el reloj con el que
 se compara el cronograma. El botón **Probar** verifica la conexión antes de
 aplicarla.
 
-La conexión usa el cliente `ssh` del sistema con autenticación por clave o
-`ssh-agent` (no pide contraseña). Antes de usarla, conviene dejar la clave
-copiada y la huella aceptada:
+La conexión funciona como `ssh nao@192.168.1.140`: se escribe la contraseña
+del NAO en la propia interfaz y se autentica con ella. La contraseña se
+mantiene solo en memoria mientras la interfaz está abierta, nunca se guarda
+en disco ni se devuelve al navegador. Para ese modo hace falta `paramiko`:
+
+```
+pip install -r requirements-ui.txt
+```
+
+Si se deja la contraseña vacía se usa una clave SSH o `ssh-agent`, sin pedir
+nada por consola:
 
 ```
 ssh-copy-id nao@192.168.1.140
-ssh nao@192.168.1.140 date
 ```
 
-También se puede arrancar ya conectado al robot:
+También se puede arrancar ya conectado al robot. Con `--ssh-pedir-clave` la
+contraseña se pide por consola, así no queda en el historial:
 
 ```
-py -3 src/cronograma_ui.py --ssh 192.168.1.140
+py -3 src/cronograma_ui.py --ssh 192.168.1.140 --ssh-pedir-clave
 py -3 src/cronograma_ui.py --ssh 192.168.1.140 --ssh-user nao \
     --ssh-ruta /home/nao/NAO-MED/data/cronograma.csv
 ```

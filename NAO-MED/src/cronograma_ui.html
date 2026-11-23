@@ -658,9 +658,16 @@
         </div>
 
         <div class="field">
+          <label for="c-clave">Contrasena del NAO</label>
+          <input id="c-clave" name="clave" type="password" autocomplete="current-password"
+                 placeholder="La misma que escribe en ssh nao@192.168.1.140">
+          <span class="help">Se guarda solo en memoria mientras la interfaz esta abierta. Si la deja vacia se usa la clave o ssh-agent.</span>
+        </div>
+
+        <div class="field">
           <label for="c-identidad">Clave privada SSH (opcional)</label>
           <input id="c-identidad" name="identidad" placeholder="~/.ssh/id_ed25519" spellcheck="false">
-          <span class="help">Si se deja vacio se usa ssh-agent o ~/.ssh/config. La interfaz no pide contrasena.</span>
+          <span class="help">Solo se usa cuando la contrasena esta vacia.</span>
         </div>
       </div>
 
@@ -788,7 +795,8 @@
       : "Este equipo";
     $("texto-conexion").textContent = texto;
     $("btn-conexion").title = ssh
-      ? "Conectado por SSH a " + conexion.archivo
+      ? "Conectado por SSH a " + conexion.archivo +
+        " (" + (conexion.autenticacion === "contrasena" ? "contrasena" : "clave") + ")"
       : "Editando " + conexion.archivo;
     $("dot-conexion").className = "dot" + (ssh ? " ssh" : "");
 
@@ -827,7 +835,8 @@
         usuario: $("c-usuario").value.trim() || "nao",
         puerto: parseInt($("c-puerto").value, 10) || 22,
         ruta: $("c-ruta").value.trim(),
-        identidad: $("c-identidad").value.trim()
+        identidad: $("c-identidad").value.trim(),
+        clave: $("c-clave").value
       };
     }
     return { modo: "local", ruta: $("c-csv").value.trim() };
@@ -849,6 +858,7 @@
     $("c-puerto").value = conexion.puerto || 22;
     $("c-ruta").value = conexion.ruta || "/home/nao/NAO-MED/data/cronograma.csv";
     $("c-identidad").value = conexion.identidad || "";
+    $("c-clave").value = "";
     $("c-csv").value = conexion.modo === "local" ? (conexion.ruta || "") : "";
     cambiarModoConexion(conexion.modo === "ssh" ? "ssh" : "local");
     $("overlay-conexion").hidden = false;

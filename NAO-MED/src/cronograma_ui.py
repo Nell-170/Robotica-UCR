@@ -209,6 +209,9 @@ class BackendLocal(object):
             "desfase": 0,
         }
 
+    def cerrar(self):
+        pass
+
     def describir(self):
         return {
             "modo": "local",
@@ -218,44 +221,62 @@ class BackendLocal(object):
             "usuario": "",
             "puerto": 0,
             "identidad": "",
+            "autenticacion": "",
         }
 
 
-def _mensaje_ssh(detalle, host, usuario, puerto=22):
+def _mensaje_ssh(detalle, host, usuario, puerto=22, contrasena=False):
     """Traduce los errores mas comunes de ssh a una frase util."""
     bajo = detalle.lower()
-    if "permission denied" in bajo:
+    if "permission denied" in bajo or "authentication failed" in bajo:
+        if contrasena:
+            return (
+                "SSH rechazo el usuario o la contrasena de {}@{}.\n"
+                "Revise la contrasena del NAO y vuelva a intentarlo.".format(usuario, host)
+            )
         return (
             "SSH rechazo la autenticacion para {}@{}.\n"
-            "Configure una clave (ssh-copy-id {}@{}) o cargue la clave en "
-            "ssh-agent; la interfaz no pide contrasena.".format(usuario, host, usuario, host)
+            "Escriba la contrasena del NAO o configure una clave "
+            "(ssh-copy-id {}@{}).".format(usuario, host, usuario, host)
         )
     if "host key verification failed" in bajo:
         return (
             "La clave del host {} no es de confianza. Conectese una vez a mano "
             "(ssh {}@{}) y acepte la huella.".format(host, usuario, host)
         )
-    if "connection refused" in bajo:
+    if ("connection refused" in bajo or "no valid connections" in bajo
+            or "unable to connect" in bajo):
         return "El NAO rechazo la conexion en {}:{}. Verifique que sshd este activo.".format(
             host, puerto)
-    if "no route to host" in bajo or "timed out" in bajo or "connection timed out" in bajo:
+    if "no route to host" in bajo or "timed out" in bajo:
         return "No se pudo llegar a {}. Revise la red y la IP del NAO.".format(host)
-    if "could not resolve hostname" in bajo:
+    if "could not resolve hostname" in bajo or "name or service not known" in bajo:
         return "No se pudo resolver el nombre '{}'.".format(host)
-    return detalle or "ssh fallo sin mensaje."
+    return detalle or "No se pudo ejecutar el comando en {}:{}.".format(host, puerto)
 
 
 class BackendSsh(object):
-    """Cronograma dentro del NAO, leido y escrito por ssh."""
+    """Cronograma dentro del NAO, leido y escrito por ssh.
+
+    Con contrasena usa paramiko (opcional, `pip install paramiko`), que
+    permite autenticarse igual que `ssh nao@192.168.1.140` escribiendo la
+    clave. Sin contrasena usa el cliente ssh del sistema con una clave o
+    ssh-agent, sin pedir nada por consola.
+    """
 
     modo = "ssh"
 
-    def __init__(self, host, usuario, puerto, ruta, identidad=""):
+    def __init__(self, host, usuario, puerto, ruta, identidad="", clave=""):
         self.host = host
         self.usuario = usuario
         self.puerto = puerto
         self.ruta = ruta
         self.identidad = identidad
+        self.clave = clave
+        self._cliente = None
+        self._lock = threading.Lock()
+
+    # -- cliente ssh del sistema (clave o ssh-agent) ------------------------
 
     def _comando_ssh(self, comando):
         args = [
@@ -264,14 +285,13 @@ class BackendSsh(object):
             "-o", "BatchMode=yes",
             "-o", "ConnectTimeout=8",
             "-o", "StrictHostKeyChecking=accept-new",
-            "-o", "LogLevel=ERROR",
         ]
         if self.identidad:
             args += ["-i", self.identidad]
         args += ["{}@{}".format(self.usuario, self.host), comando]
         return args
 
-    def _ejecutar(self, comando, entrada=None):
+    def _ejecutar_ssh(self, comando, entrada=None):
         try:
             proceso = subprocess.run(
                 self._comando_ssh(comando),
@@ -290,8 +310,93 @@ class BackendSsh(object):
 
         if proceso.returncode != 0:
             detalle = proceso.stderr.decode("utf-8", "replace").strip()
+            if not detalle:
+                detalle = "ssh termino con codigo {} sin mensaje".format(proceso.returncode)
             raise BackendError(_mensaje_ssh(detalle, self.host, self.usuario, self.puerto))
         return proceso.stdout.decode("utf-8", "replace")
+
+    # -- paramiko (contrasena) ---------------------------------------------
+
+    def _cerrar_paramiko(self):
+        if self._cliente is not None:
+            try:
+                self._cliente.close()
+            except Exception:
+                pass
+            self._cliente = None
+
+    def _cliente_paramiko(self):
+        if self._cliente is not None:
+            transporte = self._cliente.get_transport()
+            if transporte is not None and transporte.is_active():
+                return self._cliente
+            self._cerrar_paramiko()
+
+        try:
+            import paramiko
+        except ImportError:
+            raise BackendError(
+                "Para conectarse con contrasena hace falta paramiko.\n"
+                "Instalelo con: pip install paramiko\n"
+                "Tambien puede usar una clave SSH y dejar la contrasena vacia."
+            )
+
+        cliente = paramiko.SSHClient()
+        cliente.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        try:
+            cliente.connect(
+                hostname=self.host,
+                port=self.puerto,
+                username=self.usuario,
+                password=self.clave,
+                key_filename=self.identidad or None,
+                timeout=8,
+                banner_timeout=15,
+                auth_timeout=15,
+                allow_agent=False,
+                look_for_keys=False,
+            )
+        except paramiko.AuthenticationException:
+            raise BackendError(
+                _mensaje_ssh("authentication failed", self.host, self.usuario,
+                             self.puerto, True)
+            )
+        except Exception as error:
+            raise BackendError(
+                _mensaje_ssh(str(error), self.host, self.usuario, self.puerto, True)
+            )
+        self._cliente = cliente
+        return cliente
+
+    def _ejecutar_paramiko(self, comando, entrada=None):
+        with self._lock:
+            cliente = self._cliente_paramiko()
+            try:
+                stdin, stdout, stderr = cliente.exec_command(comando, timeout=30)
+                if entrada:
+                    stdin.write(entrada)
+                    stdin.flush()
+                stdin.channel.shutdown_write()
+                salida = stdout.read()
+                error = stderr.read().decode("utf-8", "replace").strip()
+                codigo = stdout.channel.recv_exit_status()
+            except Exception as fallo:
+                self._cerrar_paramiko()
+                raise BackendError(
+                    _mensaje_ssh(str(fallo), self.host, self.usuario, self.puerto, True)
+                )
+        if codigo != 0:
+            raise BackendError(
+                _mensaje_ssh(error, self.host, self.usuario, self.puerto, True)
+            )
+        return salida.decode("utf-8", "replace")
+
+    # -- interfaz comun -----------------------------------------------------
+
+    def _ejecutar(self, comando, entrada=None):
+        if self.clave:
+            return self._ejecutar_paramiko(comando, entrada)
+        return self._ejecutar_ssh(comando, entrada)
 
     def leer(self):
         # Si el archivo no existe todavia, se trata como cronograma vacio.
@@ -318,7 +423,11 @@ class BackendSsh(object):
             "desfase": int(round(desfase)),
         }
 
+    def cerrar(self):
+        self._cerrar_paramiko()
+
     def describir(self):
+        # La contrasena nunca sale de aqui: solo se informa como se autentica.
         return {
             "modo": "ssh",
             "archivo": "{}@{}:{}".format(self.usuario, self.host, self.ruta),
@@ -327,6 +436,7 @@ class BackendSsh(object):
             "usuario": self.usuario,
             "puerto": self.puerto,
             "identidad": self.identidad,
+            "autenticacion": "contrasena" if self.clave else "clave",
         }
 
 
@@ -365,7 +475,14 @@ def construir_backend(datos):
         if not os.path.isfile(identidad):
             raise ApiError("No se encontro el archivo de clave: {}".format(identidad))
 
-    return BackendSsh(host, usuario, puerto, ruta, identidad)
+    clave = datos.get("clave")
+    clave = "" if clave is None else str(clave)
+    if len(clave) > 256:
+        raise ApiError("La contrasena es demasiado larga.")
+    if "\x00" in clave or "\r" in clave or "\n" in clave:
+        raise ApiError("La contrasena contiene caracteres no validos.")
+
+    return BackendSsh(host, usuario, puerto, ruta, identidad, clave)
 
 
 class Conexion(object):
@@ -381,7 +498,11 @@ class Conexion(object):
 
     def cambiar(self, backend):
         with self._lock:
+            anterior = self._backend
             self._backend = backend
+        cerrar = getattr(anterior, "cerrar", None)
+        if cerrar is not None:
+            cerrar()
 
 
 CONEXION = Conexion(BackendLocal(DEFAULT_CSV_PATH))
@@ -463,12 +584,18 @@ def eliminar(indice):
 def probar_conexion(datos):
     """Prueba un destino sin activarlo: lee el CSV y la hora."""
     backend = construir_backend(datos)
-    entradas = parsear_csv(backend.leer())
+    try:
+        entradas = parsear_csv(backend.leer())
+        reloj = backend.reloj()
+    finally:
+        cerrar = getattr(backend, "cerrar", None)
+        if cerrar is not None:
+            cerrar()
     return {
         "ok": True,
         "archivo": backend.describir()["archivo"],
         "entradas": len(entradas),
-        "reloj": backend.reloj(),
+        "reloj": reloj,
     }
 
 
@@ -575,9 +702,23 @@ def main(argv=None):
     parser.add_argument("--ssh-port", type=int, default=22, help="Puerto SSH (por defecto 22).")
     parser.add_argument("--ssh-ruta", default=RUTA_NAO, help="Ruta del CSV dentro del NAO.")
     parser.add_argument("--ssh-identidad", default="", help="Archivo de clave privada SSH.")
+    parser.add_argument(
+        "--ssh-pedir-clave",
+        action="store_true",
+        help="Pedir la contrasena del NAO por consola (no queda en el historial).",
+    )
     args = parser.parse_args(argv)
 
     if args.ssh:
+        clave = ""
+        if args.ssh_pedir_clave:
+            import getpass
+
+            if sys.stdin is not None and sys.stdin.isatty():
+                clave = getpass.getpass("Contrasena de {}@{}: ".format(args.ssh_user, args.ssh))
+            else:
+                # Sin terminal (por ejemplo una tuberia) se lee una linea.
+                clave = sys.stdin.readline().rstrip("\r\n")
         try:
             backend = construir_backend({
                 "modo": "ssh",
@@ -586,6 +727,7 @@ def main(argv=None):
                 "puerto": args.ssh_port,
                 "ruta": args.ssh_ruta,
                 "identidad": args.ssh_identidad,
+                "clave": clave,
             })
             backend.leer()
         except (ApiError, BackendError) as error:
