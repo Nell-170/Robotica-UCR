@@ -47,7 +47,7 @@ los cubos cercanos.
 src/main.py  (punto de entrada)
  ├─ robot_connector.py       detecta el NAO real (192.168.1.140:9559) o abre Webots
  ├─ schedule.py              lee data/cronograma.csv
- ├─ medication_scheduler.py  compara día/hora del sistema con el cronograma
+ ├─ medication_scheduler.py  compara día/hora del reloj del NAO con el cronograma
  └─ nao_controller.py        notificar_medicamento(): secuencia completa
      ├─ robot real:  ALProxy (NAOqi) + reconocimiento.py + deteccion_cubo.py
      └─ simulador:   socket TCP 127.0.0.1:9000  ->  controlador de Webots
@@ -57,6 +57,7 @@ src/main.py  (punto de entrada)
 | Módulo | Función |
 |--------|---------|
 | `src/main.py` | Conecta con el robot, carga el cronograma y monitorea la hora. |
+| `src/reloj.py` | Lee la hora interna del NAO, si falla, usa la de la PC. |
 | `src/robot_connector.py` | Revisa por socket si el NAO real responde; si no, lanza Webots con `nao_med.wbt`. |
 | `src/schedule.py` | Carga el CSV (columnas `medicamento,dia,hora`). |
 | `src/medication_scheduler.py` | Detecta el medicamento pendiente y llama a la notificación. |
@@ -197,7 +198,18 @@ Paracetamol,Domingo,17:50
 
 Los nombres de medicamento deben coincidir con los de los cubos
 (paracetamol, ibuprofeno, clonacepam, sin importar mayúsculas). El día y la
-hora se comparan con el reloj del sistema, que debe estar en hora.
+hora se comparan con el reloj interno del NAO cuando hay robot real; en el 
+simulador se usa el reloj de la PC. Si el robot deja de responder, el 
+monitor sigue con la hora de la PC y avisa una sola vez.
+
+Para verificar que el NAO y la PC coinciden (misma zona horaria):
+
+```
+py -2.7 src/reloj.py
+```
+
+Si difieren, ajustar la hora/zona horaria del robot antes de confiar en el
+cronograma.
 
 ### Parámetros que se ajustan en el código
 
