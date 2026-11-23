@@ -78,3 +78,7 @@ class ALProxy(object):
         return [ahora.year, ahora.month, ahora.day, ahora.hour,
                 ahora.minute, ahora.second, ahora.microsecond // 1000,
                 ahora.weekday()]
+
+    def timezone(self):
+        """Mock de timezone para ALSystem: zona horaria local de la PC."""
+        return time.tzname[0]

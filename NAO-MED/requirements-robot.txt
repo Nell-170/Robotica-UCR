@@ -5,3 +5,5 @@
 # No instalar estas dependencias en el entorno Python 3 de Webots.
 numpy==1.16.6
 opencv-python==4.2.0.32
+# Zona horaria del NAO (reloj.py). Sin pytz se usa la hora de la PC.
+pytz==2018.9
