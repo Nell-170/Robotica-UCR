@@ -130,6 +130,83 @@
 
   .btn.icon { padding: 6px 9px; border-radius: 8px; font-size: 12.5px; }
 
+  /* ---------- destino activo ---------- */
+
+  .conn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 260px;
+  }
+
+  .conn .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--ok);
+    box-shadow: 0 0 0 3px rgba(31, 157, 99, .16);
+    flex: none;
+  }
+
+  .conn .dot.ssh { background: var(--accent); box-shadow: 0 0 0 3px rgba(47, 109, 246, .16); }
+
+  .conn .dot.bad { background: var(--danger); box-shadow: 0 0 0 3px rgba(214, 69, 69, .16); }
+
+  .conn .txt {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .seg {
+    display: flex;
+    gap: 4px;
+    padding: 4px;
+    background: #eef2f9;
+    border-radius: 10px;
+    margin-bottom: 16px;
+  }
+
+  .seg button {
+    flex: 1;
+    border: 0;
+    background: transparent;
+    padding: 9px 10px;
+    border-radius: 7px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--muted);
+  }
+
+  .seg button[aria-pressed="true"] {
+    background: var(--card);
+    color: var(--accent);
+    box-shadow: 0 1px 3px rgba(20, 35, 60, .12);
+  }
+
+  .status {
+    margin: 0 0 14px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    font-size: 12.5px;
+    line-height: 1.45;
+    background: #f2f7f4;
+    border: 1px solid #cfe8da;
+    color: #1c6b47;
+    white-space: pre-line;
+  }
+
+  .status[hidden] { display: none; }
+
+  .status.bad { background: var(--danger-soft); border-color: #f2c9c9; color: #a52f2f; }
+
+  .status.busy { background: #f2f5fb; border-color: var(--line); color: var(--muted); }
+
+  .field .help { display: block; margin-top: 5px; font-size: 11.5px; color: var(--muted); }
+
+  .modal.wide { max-width: 480px; }
+
   main { padding: 18px 22px 40px; }
 
   .panel {
@@ -465,6 +542,14 @@
     <button role="tab" id="tab-lista" aria-selected="false" aria-controls="view-lista" data-view="lista">Lista</button>
   </div>
 
+  <button class="btn conn" id="btn-conexion" title="Cambiar el destino del cronograma">
+    <span class="dot" id="dot-conexion"></span>
+    <span class="txt" id="texto-conexion">Este equipo</span>
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M6 9l6 6 6-6"></path>
+    </svg>
+  </button>
+
   <button class="btn primary" id="btn-add">
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
       <path d="M12 5v14M5 12h14"></path>
@@ -496,6 +581,7 @@
 
   <div class="foot">
     <span>Archivo: <code id="ruta-archivo">data/cronograma.csv</code></span>
+    <span id="foot-reloj">Hora de referencia: PC</span>
     <span>Los cambios se guardan al instante en el CSV.</span>
   </div>
 </main>
@@ -536,13 +622,75 @@
   </div>
 </div>
 
+<div class="overlay" id="overlay-conexion" hidden>
+  <div class="modal wide" role="dialog" aria-modal="true" aria-labelledby="conexion-title">
+    <h3 id="conexion-title">Destino del cronograma</h3>
+    <p class="sub">Elige si se edita el CSV de este equipo o el que usa el NAO.</p>
+
+    <div class="seg" role="group" aria-label="Destino">
+      <button type="button" id="seg-local" data-modo="local" aria-pressed="true">Este equipo</button>
+      <button type="button" id="seg-ssh" data-modo="ssh" aria-pressed="false">NAO por SSH</button>
+    </div>
+
+    <p class="status" id="conexion-status" hidden></p>
+
+    <form id="form-conexion" autocomplete="off">
+      <div id="campos-ssh">
+        <div class="row2">
+          <div class="field">
+            <label for="c-host">IP o nombre del NAO</label>
+            <input id="c-host" name="host" placeholder="192.168.1.140" inputmode="url">
+          </div>
+          <div class="field">
+            <label for="c-puerto">Puerto SSH</label>
+            <input id="c-puerto" name="puerto" type="number" min="1" max="65535" value="22">
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="c-usuario">Usuario SSH</label>
+          <input id="c-usuario" name="usuario" value="nao" maxlength="32">
+        </div>
+
+        <div class="field">
+          <label for="c-ruta">Ruta del CSV en el NAO</label>
+          <input id="c-ruta" name="ruta" value="/home/nao/NAO-MED/data/cronograma.csv" spellcheck="false">
+        </div>
+
+        <div class="field">
+          <label for="c-identidad">Clave privada SSH (opcional)</label>
+          <input id="c-identidad" name="identidad" placeholder="~/.ssh/id_ed25519" spellcheck="false">
+          <span class="help">Si se deja vacio se usa ssh-agent o ~/.ssh/config. La interfaz no pide contrasena.</span>
+        </div>
+      </div>
+
+      <div id="campos-local" hidden>
+        <div class="field">
+          <label for="c-csv">Archivo CSV de este equipo</label>
+          <input id="c-csv" name="csv" spellcheck="false" placeholder="data/cronograma.csv (por defecto)">
+        </div>
+      </div>
+
+      <div class="modal-foot">
+        <button type="button" class="btn" id="btn-probar">Probar</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn ghost" id="btn-cerrar-conexion">Cancelar</button>
+        <button type="submit" class="btn primary" id="btn-aplicar">Aplicar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script>
 (function () {
   "use strict";
 
-  var estado = { entradas: [], dias: [], medicamentos: [], vista: "semana", editando: null };
+  var estado = {
+    entradas: [], dias: [], medicamentos: [], vista: "semana", editando: null,
+    conexion: null, reloj: null, modoConexion: "local"
+  };
 
   var PALETA = [
     ["#e9f0ff", "#2f6df6"],
@@ -625,8 +773,36 @@
     estado.entradas = datos.entradas || [];
     estado.dias = datos.dias || estado.dias;
     estado.medicamentos = datos.medicamentos || estado.medicamentos;
+    estado.conexion = datos.conexion || estado.conexion;
+    estado.reloj = datos.reloj || estado.reloj;
     if (datos.archivo) $("ruta-archivo").textContent = datos.archivo;
+    actualizarConexion();
     render();
+  }
+
+  function actualizarConexion() {
+    var conexion = estado.conexion || { modo: "local", archivo: "" };
+    var ssh = conexion.modo === "ssh";
+    var texto = ssh
+      ? (conexion.usuario || "nao") + "@" + (conexion.host || "?")
+      : "Este equipo";
+    $("texto-conexion").textContent = texto;
+    $("btn-conexion").title = ssh
+      ? "Conectado por SSH a " + conexion.archivo
+      : "Editando " + conexion.archivo;
+    $("dot-conexion").className = "dot" + (ssh ? " ssh" : "");
+
+    var reloj = estado.reloj;
+    if (reloj) {
+      var desfase = Math.round(reloj.desfase || 0);
+      var signo = desfase < 0 ? "-" : "+";
+      var minutos = Math.floor(Math.abs(desfase) / 60);
+      var segundos = Math.abs(desfase) % 60;
+      var detalle = reloj.fuente === "NAO"
+        ? "Hora del NAO: " + reloj.fecha + " (" + signo + minutos + " min " + segundos + " s respecto a la PC)"
+        : "Hora de referencia: PC " + reloj.fecha;
+      $("foot-reloj").textContent = detalle;
+    }
   }
 
   function render() {
@@ -636,10 +812,100 @@
     $("count-lista").textContent = plural(estado.entradas.length);
   }
 
+  function mostrarEstadoConexion(texto, clase) {
+    var caja = $("conexion-status");
+    caja.textContent = texto;
+    caja.className = "status" + (clase ? " " + clase : "");
+    caja.hidden = false;
+  }
+
+  function datosConexion() {
+    if (estado.modoConexion === "ssh") {
+      return {
+        modo: "ssh",
+        host: $("c-host").value.trim(),
+        usuario: $("c-usuario").value.trim() || "nao",
+        puerto: parseInt($("c-puerto").value, 10) || 22,
+        ruta: $("c-ruta").value.trim(),
+        identidad: $("c-identidad").value.trim()
+      };
+    }
+    return { modo: "local", ruta: $("c-csv").value.trim() };
+  }
+
+  function cambiarModoConexion(modo) {
+    estado.modoConexion = modo;
+    $("seg-local").setAttribute("aria-pressed", modo === "local" ? "true" : "false");
+    $("seg-ssh").setAttribute("aria-pressed", modo === "ssh" ? "true" : "false");
+    $("campos-local").hidden = modo !== "local";
+    $("campos-ssh").hidden = modo !== "ssh";
+    $("conexion-status").hidden = true;
+  }
+
+  function abrirConexion() {
+    var conexion = estado.conexion || {};
+    $("c-host").value = conexion.host || "";
+    $("c-usuario").value = conexion.usuario || "nao";
+    $("c-puerto").value = conexion.puerto || 22;
+    $("c-ruta").value = conexion.ruta || "/home/nao/NAO-MED/data/cronograma.csv";
+    $("c-identidad").value = conexion.identidad || "";
+    $("c-csv").value = conexion.modo === "local" ? (conexion.ruta || "") : "";
+    cambiarModoConexion(conexion.modo === "ssh" ? "ssh" : "local");
+    $("overlay-conexion").hidden = false;
+    setTimeout(function () {
+      (estado.modoConexion === "ssh" ? $("c-host") : $("c-csv")).focus();
+    }, 30);
+  }
+
+  function cerrarConexion() {
+    $("overlay-conexion").hidden = true;
+  }
+
+  async function probarConexion() {
+    var boton = $("btn-probar");
+    boton.disabled = true;
+    mostrarEstadoConexion("Probando conexion...", "busy");
+    try {
+      var datos = await api("POST", "/api/conexion/probar", datosConexion());
+      mostrarEstadoConexion(
+        "Conexion correcta con " + datos.archivo + ".\n" +
+        datos.entradas + " entrada(s) en el cronograma.\n" +
+        "Hora del " + datos.reloj.fuente + ": " + datos.reloj.fecha
+      );
+    } catch (error) {
+      mostrarEstadoConexion(error.message, "bad");
+    } finally {
+      boton.disabled = false;
+    }
+  }
+
+  async function aplicarConexion(evento) {
+    evento.preventDefault();
+    var boton = $("btn-aplicar");
+    boton.disabled = true;
+    mostrarEstadoConexion("Conectando...", "busy");
+    try {
+      var datos = await api("POST", "/api/conexion", datosConexion());
+      aplicar(datos);
+      cerrarConexion();
+      avisar(datos.conexion.modo === "ssh"
+        ? "Conectado al NAO " + datos.conexion.host + "."
+        : "Editando el cronograma de este equipo.");
+    } catch (error) {
+      mostrarEstadoConexion(error.message, "bad");
+    } finally {
+      boton.disabled = false;
+    }
+  }
+
   function renderSemana() {
     var ahora = new Date();
-    var diaHoy = (ahora.getDay() + 6) % 7;
+    var diaHoy = ahora.getDay() === 0 ? 6 : ahora.getDay() - 1;
     var horaHoy = ahora.getHours();
+    if (estado.reloj && typeof estado.reloj.dia === "number") {
+      diaHoy = estado.reloj.dia;
+      horaHoy = parseInt(String(estado.reloj.hora).split(":")[0], 10);
+    }
 
     var porCasilla = {};
     estado.entradas.forEach(function (entrada) {
@@ -816,6 +1082,16 @@
 
     $("btn-add").addEventListener("click", function () { abrirModal("agregar"); });
 
+    $("btn-conexion").addEventListener("click", abrirConexion);
+    $("seg-local").addEventListener("click", function () { cambiarModoConexion("local"); });
+    $("seg-ssh").addEventListener("click", function () { cambiarModoConexion("ssh"); });
+    $("btn-probar").addEventListener("click", probarConexion);
+    $("form-conexion").addEventListener("submit", aplicarConexion);
+    $("btn-cerrar-conexion").addEventListener("click", cerrarConexion);
+    $("overlay-conexion").addEventListener("mousedown", function (evento) {
+      if (evento.target === $("overlay-conexion")) cerrarConexion();
+    });
+
     $("week").addEventListener("click", function (evento) {
       var chip = evento.target.closest(".chip");
       if (chip) {
@@ -851,7 +1127,9 @@
       if (evento.target === $("overlay")) cerrarModal();
     });
     document.addEventListener("keydown", function (evento) {
-      if (evento.key === "Escape" && !$("overlay").hidden) cerrarModal();
+      if (evento.key !== "Escape") return;
+      if (!$("overlay").hidden) cerrarModal();
+      if (!$("overlay-conexion").hidden) cerrarConexion();
     });
   }
 

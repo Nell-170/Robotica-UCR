@@ -211,6 +211,54 @@ py -2.7 src/reloj.py
 Si difieren, ajustar la hora/zona horaria del robot antes de confiar en el
 cronograma.
 
+#### Interfaz web para editar el cronograma
+
+`src/cronograma_ui.py` abre una página local para agregar, modificar y
+eliminar entradas sin tocar el CSV a mano. Solo usa la biblioteca estándar
+de Python 3 (no necesita Flask ni dependencias nuevas).
+
+```
+py -3 src/cronograma_ui.py
+```
+
+Abre `http://127.0.0.1:8765/` con dos vistas: **Semana** (rejilla de 7 días
+por 24 horas, una casilla por hora; clic en una casilla libre agrega, clic en
+una entrada edita) y **Lista** (tabla ordenada por día y hora).
+
+El botón de destino de la barra superior permite elegir dónde se edita:
+
+| Destino | Qué edita |
+|---------|-----------|
+| Este equipo | `data/cronograma.csv` del repo (o el que se pase con `--csv`) |
+| NAO por SSH | `/home/nao/NAO-MED/data/cronograma.csv` dentro del robot |
+
+En modo SSH la interfaz muestra la hora del robot y su desfase con la PC, y
+la vista semanal resalta el día y la hora del NAO, que es el reloj con el que
+se compara el cronograma. El botón **Probar** verifica la conexión antes de
+aplicarla.
+
+La conexión usa el cliente `ssh` del sistema con autenticación por clave o
+`ssh-agent` (no pide contraseña). Antes de usarla, conviene dejar la clave
+copiada y la huella aceptada:
+
+```
+ssh-copy-id nao@192.168.1.140
+ssh nao@192.168.1.140 date
+```
+
+También se puede arrancar ya conectado al robot:
+
+```
+py -3 src/cronograma_ui.py --ssh 192.168.1.140
+py -3 src/cronograma_ui.py --ssh 192.168.1.140 --ssh-user nao \
+    --ssh-ruta /home/nao/NAO-MED/data/cronograma.csv
+```
+
+Cada cambio reescribe el CSV completo conservando las columnas
+`medicamento,dia,hora`, el fin de línea que ya use el archivo y sin BOM. La
+escritura es atómica (archivo temporal y luego `mv`), tanto en local como en
+el robot.
+
 ### Parámetros que se ajustan en el código
 
 | Parámetro | Dónde | Valor actual |
