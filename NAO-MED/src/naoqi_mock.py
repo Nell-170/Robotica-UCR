@@ -6,6 +6,7 @@ En el lab, cuando tengan el SDK oficial de NAOqi 2.8.7.4 instalado,
 reemplacen los imports de 'naoqi_mock' por 'naoqi' en nao_controller.py
 """
 import time
+from datetime import datetime
 
 
 class ALProxy(object):
@@ -66,3 +67,14 @@ class ALProxy(object):
             # Formato real: [marca_tiempo, [ShapeInfo, ExtraInfo], camaraId, tiempo]
             return [time.time(), [[[0.0, 0.0, 0.0, 0.0], [0, 0, 0]]], 0, 0.0]
         return []
+
+    def date(self):
+        """
+        Mock de date para ALSystem: hora local de la PC, con el mismo
+        formato que el robot ([anio, mes, dia, hora, minuto, segundo,
+        milisegundo, dia_semana]).
+        """
+        ahora = datetime.now()
+        return [ahora.year, ahora.month, ahora.day, ahora.hour,
+                ahora.minute, ahora.second, ahora.microsecond // 1000,
+                ahora.weekday()]
