@@ -459,16 +459,18 @@ def _barrer(ip, puerto, giros, pasadas, terminado, diagnostico=False, prefijo_de
     return vistos
 
 
-def identificar_cubos(ip, puerto, diagnostico=False):
+def identificar_cubos(ip, puerto, diagnostico=False, prefijo_debug=""):
     """Mira con las dos camaras, barre la cabeza en horizontal, identifica
     los cubos en frente y devuelve los medicamentos vistos, ordenados de
     izquierda a derecha respecto al robot.
 
     Se detiene en cuanto ve los tres cubos. Con diagnostico=True imprime,
     por cada candidato, sus medidas y guarda un fotograma anotado por
-    camara y posicion en data/debug/ para afinar umbrales.
+    camara y posicion en data/debug/ para afinar umbrales. prefijo_debug
+    permite separar las capturas de distintas condiciones.
     """
-    vistos = _barrer(ip, puerto, GIROS_CABEZA, PASADAS_BARRIDO, _todos_vistos, diagnostico)
+    vistos = _barrer(ip, puerto, GIROS_CABEZA, PASADAS_BARRIDO, _todos_vistos,
+                     diagnostico, prefijo_debug)
 
     # Orden de izquierda a derecha = azimut de mayor a menor.
     ordenados = sorted(
