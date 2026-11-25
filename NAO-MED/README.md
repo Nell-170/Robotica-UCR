@@ -43,6 +43,8 @@ los cubos cercanos.
 
 ## Arquitectura
 
+![Diagrama de arquitectura de NAO-Med](img/diagrama_arquitectura.svg)
+
 ```
 src/main.py  (punto de entrada)
  ├─ robot_connector.py       detecta el NAO real (192.168.1.140:9559) o abre Webots
@@ -361,6 +363,7 @@ data/cronograma.csv  horario de medicamentos
 data/imagenes/       texturas del mundo (rostro de prueba, caras del cubo de rubik)
 data/cubo_referencias/ fotos de referencia de los cubos
 data/debug/          fotogramas de diagnóstico (ignorado por git)
+img/                 imágenes del README (diagrama de arquitectura)
 run.bat              comandos de ejecución
 requirements*.txt    dependencias por entorno
 ```
