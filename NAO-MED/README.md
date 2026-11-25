@@ -47,7 +47,7 @@ los cubos cercanos.
 src/main.py  (punto de entrada)
  ├─ robot_connector.py       detecta el NAO real (192.168.1.140:9559) o abre Webots
  ├─ schedule.py              lee data/cronograma.csv
- ├─ medication_scheduler.py  compara día/hora del sistema con el cronograma
+ ├─ medication_scheduler.py  compara día/hora del reloj del NAO con el cronograma
  └─ nao_controller.py        notificar_medicamento(): secuencia completa
      ├─ robot real:  ALProxy (NAOqi) + reconocimiento.py + deteccion_cubo.py
      └─ simulador:   socket TCP 127.0.0.1:9000  ->  controlador de Webots
@@ -57,6 +57,7 @@ src/main.py  (punto de entrada)
 | Módulo | Función |
 |--------|---------|
 | `src/main.py` | Conecta con el robot, carga el cronograma y monitorea la hora. |
+| `src/reloj.py` | Lee la hora interna del NAO, si falla, usa la de la PC. |
 | `src/robot_connector.py` | Revisa por socket si el NAO real responde; si no, lanza Webots con `nao_med.wbt`. |
 | `src/schedule.py` | Carga el CSV (columnas `medicamento,dia,hora`). |
 | `src/medication_scheduler.py` | Detecta el medicamento pendiente y llama a la notificación. |
@@ -197,7 +198,74 @@ Paracetamol,Domingo,17:50
 
 Los nombres de medicamento deben coincidir con los de los cubos
 (paracetamol, ibuprofeno, clonacepam, sin importar mayúsculas). El día y la
-hora se comparan con el reloj del sistema, que debe estar en hora.
+hora se comparan con el reloj interno del NAO cuando hay robot real; en el 
+simulador se usa el reloj de la PC. Si el robot deja de responder, el 
+monitor sigue con la hora de la PC y avisa una sola vez.
+
+Para verificar que el NAO y la PC coinciden (misma zona horaria):
+
+```
+py -2.7 src/reloj.py
+```
+
+Si difieren, ajustar la hora/zona horaria del robot antes de confiar en el
+cronograma.
+
+#### Interfaz web para editar el cronograma
+
+`src/cronograma_ui.py` abre una página local para agregar, modificar y
+eliminar entradas sin tocar el CSV a mano. Solo usa la biblioteca estándar
+de Python 3 (no necesita Flask ni dependencias nuevas).
+
+```
+py -3 src/cronograma_ui.py
+```
+
+Abre `http://127.0.0.1:8765/` con dos vistas: **Semana** (rejilla de 7 días
+por 24 horas, una casilla por hora; clic en una casilla libre agrega, clic en
+una entrada edita) y **Lista** (tabla ordenada por día y hora).
+
+El botón de destino de la barra superior permite elegir dónde se edita:
+
+| Destino | Qué edita |
+|---------|-----------|
+| Este equipo | `data/cronograma.csv` del repo (o el que se pase con `--csv`) |
+| NAO por SSH | `/home/nao/NAO-MED/data/cronograma.csv` dentro del robot |
+
+En modo SSH la interfaz muestra la hora del robot y su desfase con la PC, y
+la vista semanal resalta el día y la hora del NAO, que es el reloj con el que
+se compara el cronograma. El botón **Probar** verifica la conexión antes de
+aplicarla.
+
+La conexión funciona como `ssh nao@192.168.1.140`: se escribe la contraseña
+del NAO en la propia interfaz y se autentica con ella. La contraseña se
+mantiene solo en memoria mientras la interfaz está abierta, nunca se guarda
+en disco ni se devuelve al navegador. Para ese modo hace falta `paramiko`:
+
+```
+pip install -r requirements-ui.txt
+```
+
+Si se deja la contraseña vacía se usa una clave SSH o `ssh-agent`, sin pedir
+nada por consola:
+
+```
+ssh-copy-id nao@192.168.1.140
+```
+
+También se puede arrancar ya conectado al robot. Con `--ssh-pedir-clave` la
+contraseña se pide por consola, así no queda en el historial:
+
+```
+py -3 src/cronograma_ui.py --ssh 192.168.1.140 --ssh-pedir-clave
+py -3 src/cronograma_ui.py --ssh 192.168.1.140 --ssh-user nao \
+    --ssh-ruta /home/nao/NAO-MED/data/cronograma.csv
+```
+
+Cada cambio reescribe el CSV completo conservando las columnas
+`medicamento,dia,hora`, el fin de línea que ya use el archivo y sin BOM. La
+escritura es atómica (archivo temporal y luego `mv`), tanto en local como en
+el robot.
 
 ### Parámetros que se ajustan en el código
 

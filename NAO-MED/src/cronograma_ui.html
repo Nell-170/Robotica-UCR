@@ -1,0 +1,1172 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cronograma de medicamentos - NAO-Med</title>
+<style>
+  :root {
+    --bg: #f2f5fb;
+    --card: #ffffff;
+    --ink: #1b2430;
+    --muted: #6b7787;
+    --line: #e2e8f2;
+    --accent: #2f6df6;
+    --accent-soft: #e9f0ff;
+    --danger: #d64545;
+    --danger-soft: #fdecec;
+    --ok: #1f9d63;
+    --radius: 14px;
+    --shadow: 0 1px 2px rgba(20, 35, 60, .06), 0 8px 24px rgba(20, 35, 60, .06);
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body { height: 100%; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 15px/1.45 system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  button, input, select { font: inherit; color: inherit; }
+
+  button { cursor: pointer; }
+
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 22px;
+    background: rgba(255, 255, 255, .92);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--line);
+  }
+
+  .brand { display: flex; align-items: center; gap: 10px; margin-right: auto; }
+
+  .brand .mark {
+    display: grid;
+    place-items: center;
+    width: 38px;
+    height: 38px;
+    border-radius: 11px;
+    background: linear-gradient(140deg, #4f8bff, #2f6df6);
+    color: #fff;
+    box-shadow: 0 4px 12px rgba(47, 109, 246, .35);
+  }
+
+  .brand h1 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -.01em; }
+
+  .brand p { margin: 1px 0 0; font-size: 12px; color: var(--muted); }
+
+  .tabs {
+    display: flex;
+    gap: 4px;
+    padding: 4px;
+    background: #eef2f9;
+    border-radius: 11px;
+  }
+
+  .tabs button {
+    border: 0;
+    background: transparent;
+    padding: 7px 16px;
+    border-radius: 8px;
+    font-size: 13.5px;
+    font-weight: 550;
+    color: var(--muted);
+    transition: background .15s, color .15s;
+  }
+
+  .tabs button:hover { color: var(--ink); }
+
+  .tabs button[aria-selected="true"] {
+    background: var(--card);
+    color: var(--accent);
+    box-shadow: 0 1px 3px rgba(20, 35, 60, .12);
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    border: 1px solid var(--line);
+    background: var(--card);
+    padding: 8px 14px;
+    border-radius: 10px;
+    font-size: 13.5px;
+    font-weight: 550;
+    transition: background .15s, border-color .15s, transform .05s;
+  }
+
+  .btn:hover { background: #f7f9fd; border-color: #cfd9e8; }
+
+  .btn:active { transform: translateY(1px); }
+
+  .btn.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+    box-shadow: 0 4px 12px rgba(47, 109, 246, .28);
+  }
+
+  .btn.primary:hover { background: #2560e0; border-color: #2560e0; }
+
+  .btn.danger { color: var(--danger); border-color: #f2c9c9; background: var(--danger-soft); }
+
+  .btn.danger:hover { background: #fbe0e0; border-color: #eab3b3; }
+
+  .btn.ghost { border-color: transparent; background: transparent; color: var(--muted); }
+
+  .btn.ghost:hover { background: #eef2f9; color: var(--ink); }
+
+  .btn.icon { padding: 6px 9px; border-radius: 8px; font-size: 12.5px; }
+
+  /* ---------- destino activo ---------- */
+
+  .conn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 260px;
+  }
+
+  .conn .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--ok);
+    box-shadow: 0 0 0 3px rgba(31, 157, 99, .16);
+    flex: none;
+  }
+
+  .conn .dot.ssh { background: var(--accent); box-shadow: 0 0 0 3px rgba(47, 109, 246, .16); }
+
+  .conn .dot.bad { background: var(--danger); box-shadow: 0 0 0 3px rgba(214, 69, 69, .16); }
+
+  .conn .txt {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .seg {
+    display: flex;
+    gap: 4px;
+    padding: 4px;
+    background: #eef2f9;
+    border-radius: 10px;
+    margin-bottom: 16px;
+  }
+
+  .seg button {
+    flex: 1;
+    border: 0;
+    background: transparent;
+    padding: 9px 10px;
+    border-radius: 7px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--muted);
+  }
+
+  .seg button[aria-pressed="true"] {
+    background: var(--card);
+    color: var(--accent);
+    box-shadow: 0 1px 3px rgba(20, 35, 60, .12);
+  }
+
+  .status {
+    margin: 0 0 14px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    font-size: 12.5px;
+    line-height: 1.45;
+    background: #f2f7f4;
+    border: 1px solid #cfe8da;
+    color: #1c6b47;
+    white-space: pre-line;
+  }
+
+  .status[hidden] { display: none; }
+
+  .status.bad { background: var(--danger-soft); border-color: #f2c9c9; color: #a52f2f; }
+
+  .status.busy { background: #f2f5fb; border-color: var(--line); color: var(--muted); }
+
+  .field .help { display: block; margin-top: 5px; font-size: 11.5px; color: var(--muted); }
+
+  .modal.wide { max-width: 480px; }
+
+  main { padding: 18px 22px 40px; }
+
+  .panel {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+
+  .panel-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .panel-head h2 { margin: 0; font-size: 14.5px; font-weight: 650; }
+
+  .panel-head .hint { font-size: 12.5px; color: var(--muted); }
+
+  .count {
+    margin-left: auto;
+    font-size: 12.5px;
+    color: var(--muted);
+    background: #f2f5fb;
+    border: 1px solid var(--line);
+    padding: 3px 10px;
+    border-radius: 999px;
+  }
+
+  .week-scroll {
+    max-height: calc(100vh - 210px);
+    min-height: 320px;
+    overflow: auto;
+  }
+
+  table.week {
+    width: 100%;
+    min-width: 820px;
+    border-collapse: separate;
+    border-spacing: 0;
+    table-layout: fixed;
+  }
+
+  table.week th, table.week td {
+    border-bottom: 1px solid var(--line);
+    border-right: 1px solid var(--line);
+  }
+
+  table.week thead th {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    background: #f8fafd;
+    padding: 10px 6px;
+    font-size: 12.5px;
+    font-weight: 650;
+    letter-spacing: .01em;
+    color: #46536a;
+    text-transform: capitalize;
+  }
+
+  table.week thead th.today { color: var(--accent); background: var(--accent-soft); }
+
+  table.week th.hour, table.week td.hour {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    width: 74px;
+    background: #f8fafd;
+    text-align: right;
+    padding: 0 10px;
+    font-size: 11.5px;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+    font-weight: 500;
+  }
+
+  table.week thead th.hour { z-index: 4; }
+
+  table.week tbody tr.now td.hour { color: var(--accent); font-weight: 700; }
+
+  table.week tbody tr.now td.slot { background: #fbfcff; }
+
+  table.week td.slot {
+    height: 46px;
+    padding: 3px;
+    vertical-align: top;
+    cursor: pointer;
+    transition: background .12s;
+  }
+
+  table.week td.slot:hover { background: #f5f8ff; }
+
+  table.week td.slot:hover::after {
+    content: "+";
+    display: block;
+    text-align: center;
+    color: #b9c6da;
+    font-size: 15px;
+    line-height: 1;
+    margin-top: 2px;
+  }
+
+  table.week td.slot.filled:hover::after { content: none; }
+
+  .chip {
+    display: block;
+    width: 100%;
+    border: 0;
+    border-left: 3px solid var(--chip-line, #2f6df6);
+    background: var(--chip-bg, #e9f0ff);
+    color: #22303f;
+    border-radius: 7px;
+    padding: 4px 7px;
+    margin-bottom: 3px;
+    text-align: left;
+    font-size: 11.5px;
+    line-height: 1.25;
+    overflow: hidden;
+    transition: filter .12s;
+  }
+
+  .chip:hover { filter: brightness(.96); }
+
+  .chip .t { font-weight: 700; font-variant-numeric: tabular-nums; }
+
+  .chip .m {
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  table.list { width: 100%; border-collapse: collapse; }
+
+  table.list th {
+    text-align: left;
+    font-size: 11.5px;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: var(--muted);
+    font-weight: 650;
+    padding: 11px 18px;
+    background: #f8fafd;
+    border-bottom: 1px solid var(--line);
+  }
+
+  table.list td {
+    padding: 11px 18px;
+    border-bottom: 1px solid var(--line);
+    font-size: 14px;
+  }
+
+  table.list tbody tr:hover { background: #f9fbff; }
+
+  table.list td.actions { text-align: right; white-space: nowrap; }
+
+  table.list td.actions .btn { margin-left: 6px; }
+
+  .pill {
+    display: inline-block;
+    padding: 2px 9px;
+    border-radius: 999px;
+    background: #f2f5fb;
+    border: 1px solid var(--line);
+    font-size: 12.5px;
+    color: #46536a;
+  }
+
+  .pill.time { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--ink); }
+
+  .pill.warn { background: #fff6e6; border-color: #f3ddb4; color: #8a5b12; }
+
+  .empty {
+    padding: 46px 20px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 14px;
+  }
+
+  .empty strong { display: block; color: var(--ink); font-size: 15px; margin-bottom: 4px; }
+
+  .overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    display: grid;
+    place-items: center;
+    padding: 20px;
+    background: rgba(18, 28, 45, .38);
+    backdrop-filter: blur(2px);
+  }
+
+  .overlay[hidden] { display: none; }
+
+  .modal {
+    width: 100%;
+    max-width: 430px;
+    background: var(--card);
+    border-radius: 16px;
+    box-shadow: 0 24px 60px rgba(15, 25, 45, .28);
+    padding: 22px 22px 18px;
+    animation: pop .16s ease-out;
+  }
+
+  @keyframes pop {
+    from { opacity: 0; transform: translateY(8px) scale(.985); }
+    to { opacity: 1; transform: none; }
+  }
+
+  .modal h3 { margin: 0 0 4px; font-size: 17px; font-weight: 650; }
+
+  .modal .sub { margin: 0 0 18px; font-size: 12.5px; color: var(--muted); }
+
+  .field { margin-bottom: 14px; }
+
+  .field label {
+    display: block;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #46536a;
+    margin-bottom: 6px;
+  }
+
+  .field input, .field select {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #d7e0ee;
+    border-radius: 10px;
+    background: #fbfcfe;
+    outline: none;
+    transition: border-color .15s, box-shadow .15s;
+  }
+
+  .field input:focus, .field select:focus {
+    border-color: var(--accent);
+    background: #fff;
+    box-shadow: 0 0 0 3px rgba(47, 109, 246, .14);
+  }
+
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+  .error {
+    margin: 0 0 12px;
+    padding: 9px 12px;
+    border-radius: 9px;
+    background: var(--danger-soft);
+    border: 1px solid #f2c9c9;
+    color: #a52f2f;
+    font-size: 13px;
+  }
+
+  .error[hidden] { display: none; }
+
+  .modal-foot {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 20px;
+  }
+
+  .modal-foot .spacer { margin-left: auto; }
+
+  .toast {
+    position: fixed;
+    left: 50%;
+    bottom: 26px;
+    z-index: 80;
+    transform: translate(-50%, 16px);
+    opacity: 0;
+    pointer-events: none;
+    padding: 10px 18px;
+    border-radius: 999px;
+    background: #1f2b3d;
+    color: #fff;
+    font-size: 13.5px;
+    box-shadow: 0 10px 28px rgba(15, 25, 45, .3);
+    transition: opacity .18s, transform .18s;
+  }
+
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+  .toast.bad { background: #a52f2f; }
+
+  .foot {
+    margin: 14px 4px 0;
+    font-size: 12px;
+    color: var(--muted);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+  }
+
+  .foot code {
+    font: 12px/1.4 ui-monospace, "Cascadia Code", Consolas, monospace;
+    background: #e9eef7;
+    padding: 2px 6px;
+    border-radius: 5px;
+    color: #3a4759;
+  }
+
+  @media (max-width: 720px) {
+    .topbar { padding: 10px 14px; gap: 10px; }
+    main { padding: 14px 12px 32px; }
+    .brand p { display: none; }
+    .week-scroll { max-height: none; }
+    .row2 { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="mark" aria-hidden="true">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <rect x="3" y="8" width="18" height="8" rx="4" transform="rotate(-45 12 12)"></rect>
+        <path d="M9.2 9.2l5.6 5.6"></path>
+      </svg>
+    </span>
+    <div>
+      <h1>Cronograma de medicamentos</h1>
+      <p>NAO-Med</p>
+    </div>
+  </div>
+
+  <div class="tabs" role="tablist" aria-label="Vistas del cronograma">
+    <button role="tab" id="tab-semana" aria-selected="true" aria-controls="view-semana" data-view="semana">Semana</button>
+    <button role="tab" id="tab-lista" aria-selected="false" aria-controls="view-lista" data-view="lista">Lista</button>
+  </div>
+
+  <button class="btn conn" id="btn-conexion" title="Cambiar el destino del cronograma">
+    <span class="dot" id="dot-conexion"></span>
+    <span class="txt" id="texto-conexion">Este equipo</span>
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M6 9l6 6 6-6"></path>
+    </svg>
+  </button>
+
+  <button class="btn primary" id="btn-add">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+      <path d="M12 5v14M5 12h14"></path>
+    </svg>
+    Agregar
+  </button>
+</header>
+
+<main>
+  <section id="view-semana" class="panel" role="tabpanel" aria-labelledby="tab-semana">
+    <div class="panel-head">
+      <h2>Semana completa</h2>
+      <span class="hint">Clic en una casilla libre para agregar o editar</span>
+      <span class="count" id="count-semana">0 entradas</span>
+    </div>
+    <div class="week-scroll">
+      <table class="week" id="week"></table>
+    </div>
+  </section>
+
+  <section id="view-lista" class="panel" role="tabpanel" aria-labelledby="tab-lista" hidden>
+    <div class="panel-head">
+      <h2>Todas las entradas</h2>
+      <span class="hint">Ordenadas por dia y hora</span>
+      <span class="count" id="count-lista">0 entradas</span>
+    </div>
+    <div id="lista-wrap"></div>
+  </section>
+
+  <div class="foot">
+    <span>Archivo: <code id="ruta-archivo">data/cronograma.csv</code></span>
+    <span id="foot-reloj">Hora de referencia: PC</span>
+    <span>Los cambios se guardan al instante en el CSV.</span>
+  </div>
+</main>
+
+<div class="overlay" id="overlay" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <h3 id="modal-title">Agregar medicamento</h3>
+    <p class="sub" id="modal-sub">Elige el medicamento, el dia y la hora.</p>
+
+    <p class="error" id="modal-error" hidden></p>
+
+    <form id="form" autocomplete="off">
+      <div class="field">
+        <label for="f-medicamento">Medicamento</label>
+        <input id="f-medicamento" name="medicamento" list="medicamentos" maxlength="60"
+               placeholder="Paracetamol, Ibuprofeno, Clonacepam..." required>
+        <datalist id="medicamentos"></datalist>
+      </div>
+
+      <div class="row2">
+        <div class="field">
+          <label for="f-dia">Dia</label>
+          <select id="f-dia" name="dia" required></select>
+        </div>
+        <div class="field">
+          <label for="f-hora">Hora</label>
+          <input id="f-hora" name="hora" type="time" step="60" required>
+        </div>
+      </div>
+
+      <div class="modal-foot">
+        <button type="button" class="btn danger" id="btn-delete" hidden>Eliminar</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn ghost" id="btn-cancel">Cancelar</button>
+        <button type="submit" class="btn primary" id="btn-save">Guardar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="overlay" id="overlay-conexion" hidden>
+  <div class="modal wide" role="dialog" aria-modal="true" aria-labelledby="conexion-title">
+    <h3 id="conexion-title">Destino del cronograma</h3>
+    <p class="sub">Elige si se edita el CSV de este equipo o el que usa el NAO.</p>
+
+    <div class="seg" role="group" aria-label="Destino">
+      <button type="button" id="seg-local" data-modo="local" aria-pressed="true">Este equipo</button>
+      <button type="button" id="seg-ssh" data-modo="ssh" aria-pressed="false">NAO por SSH</button>
+    </div>
+
+    <p class="status" id="conexion-status" hidden></p>
+
+    <form id="form-conexion" autocomplete="off">
+      <div id="campos-ssh">
+        <div class="row2">
+          <div class="field">
+            <label for="c-host">IP o nombre del NAO</label>
+            <input id="c-host" name="host" placeholder="192.168.1.140" inputmode="url">
+          </div>
+          <div class="field">
+            <label for="c-puerto">Puerto SSH</label>
+            <input id="c-puerto" name="puerto" type="number" min="1" max="65535" value="22">
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="c-usuario">Usuario SSH</label>
+          <input id="c-usuario" name="usuario" value="nao" maxlength="32">
+        </div>
+
+        <div class="field">
+          <label for="c-ruta">Ruta del CSV en el NAO</label>
+          <input id="c-ruta" name="ruta" value="/home/nao/NAO-MED/data/cronograma.csv" spellcheck="false">
+        </div>
+
+        <div class="field">
+          <label for="c-clave">Contrasena del NAO</label>
+          <input id="c-clave" name="clave" type="password" autocomplete="current-password"
+                 placeholder="La misma que escribe en ssh nao@192.168.1.140">
+          <span class="help">Se guarda solo en memoria mientras la interfaz esta abierta. Si la deja vacia se usa la clave o ssh-agent.</span>
+        </div>
+
+        <div class="field">
+          <label for="c-identidad">Clave privada SSH (opcional)</label>
+          <input id="c-identidad" name="identidad" placeholder="~/.ssh/id_ed25519" spellcheck="false">
+          <span class="help">Solo se usa cuando la contrasena esta vacia.</span>
+        </div>
+      </div>
+
+      <div id="campos-local" hidden>
+        <div class="field">
+          <label for="c-csv">Archivo CSV de este equipo</label>
+          <input id="c-csv" name="csv" spellcheck="false" placeholder="data/cronograma.csv (por defecto)">
+        </div>
+      </div>
+
+      <div class="modal-foot">
+        <button type="button" class="btn" id="btn-probar">Probar</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn ghost" id="btn-cerrar-conexion">Cancelar</button>
+        <button type="submit" class="btn primary" id="btn-aplicar">Aplicar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  var estado = {
+    entradas: [], dias: [], medicamentos: [], vista: "semana", editando: null,
+    conexion: null, reloj: null, modoConexion: "local"
+  };
+
+  var PALETA = [
+    ["#e9f0ff", "#2f6df6"],
+    ["#e8f7ef", "#1f9d63"],
+    ["#fff2e3", "#d9822b"],
+    ["#f3ecff", "#7a4fd6"],
+    ["#e6f6fa", "#1c8fa8"],
+    ["#fdeaf0", "#c93d6b"]
+  ];
+
+  function $(id) { return document.getElementById(id); }
+
+  function dos(n) { return (n < 10 ? "0" : "") + n; }
+
+  function esc(texto) {
+    return String(texto == null ? "" : texto)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  }
+
+  function sinAcentos(texto) {
+    return String(texto == null ? "" : texto)
+      .normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+  }
+
+  function colorDe(nombre) {
+    var suma = 0;
+    var texto = String(nombre || "");
+    for (var i = 0; i < texto.length; i++) suma = (suma * 31 + texto.charCodeAt(i)) % 9973;
+    return PALETA[suma % PALETA.length];
+  }
+
+  function horaValida(texto) {
+    var m = /^(\d{1,2}):(\d{2})$/.exec(String(texto == null ? "" : texto).trim());
+    if (!m) return null;
+    var h = parseInt(m[1], 10), mi = parseInt(m[2], 10);
+    if (h > 23 || mi > 59) return null;
+    return { hora: h, minuto: mi };
+  }
+
+  function indiceDia(dia) {
+    var buscado = sinAcentos(dia);
+    for (var i = 0; i < estado.dias.length; i++) {
+      if (sinAcentos(estado.dias[i]) === buscado) return i;
+    }
+    return -1;
+  }
+
+  function plural(n) { return n === 1 ? "1 entrada" : n + " entradas"; }
+
+  function avisar(texto, malo) {
+    var t = $("toast");
+    t.textContent = texto;
+    t.className = "toast show" + (malo ? " bad" : "");
+    clearTimeout(avisar.temporizador);
+    avisar.temporizador = setTimeout(function () { t.className = "toast"; }, 2600);
+  }
+
+  async function api(metodo, ruta, cuerpo) {
+    var opciones = { method: metodo, headers: {} };
+    if (cuerpo !== undefined) {
+      opciones.headers["Content-Type"] = "application/json";
+      opciones.body = JSON.stringify(cuerpo);
+    }
+    var respuesta;
+    try {
+      respuesta = await fetch(ruta, opciones);
+    } catch (error) {
+      throw new Error("No hay conexion con el servidor. Revisa la terminal.");
+    }
+    var datos = null;
+    try { datos = await respuesta.json(); } catch (error) { datos = null; }
+    if (!respuesta.ok) {
+      throw new Error((datos && datos.error) || "No se pudo completar la operacion.");
+    }
+    return datos;
+  }
+
+  function aplicar(datos) {
+    estado.entradas = datos.entradas || [];
+    estado.dias = datos.dias || estado.dias;
+    estado.medicamentos = datos.medicamentos || estado.medicamentos;
+    estado.conexion = datos.conexion || estado.conexion;
+    estado.reloj = datos.reloj || estado.reloj;
+    if (datos.archivo) $("ruta-archivo").textContent = datos.archivo;
+    actualizarConexion();
+    render();
+  }
+
+  function actualizarConexion() {
+    var conexion = estado.conexion || { modo: "local", archivo: "" };
+    var ssh = conexion.modo === "ssh";
+    var texto = ssh
+      ? (conexion.usuario || "nao") + "@" + (conexion.host || "?")
+      : "Este equipo";
+    $("texto-conexion").textContent = texto;
+    $("btn-conexion").title = ssh
+      ? "Conectado por SSH a " + conexion.archivo +
+        " (" + (conexion.autenticacion === "contrasena" ? "contrasena" : "clave") + ")"
+      : "Editando " + conexion.archivo;
+    $("dot-conexion").className = "dot" + (ssh ? " ssh" : "");
+
+    var reloj = estado.reloj;
+    if (reloj) {
+      var desfase = Math.round(reloj.desfase || 0);
+      var signo = desfase < 0 ? "-" : "+";
+      var minutos = Math.floor(Math.abs(desfase) / 60);
+      var segundos = Math.abs(desfase) % 60;
+      var detalle = reloj.fuente === "NAO"
+        ? "Hora del NAO: " + reloj.fecha + " (" + signo + minutos + " min " + segundos + " s respecto a la PC)"
+        : "Hora de referencia: PC " + reloj.fecha;
+      $("foot-reloj").textContent = detalle;
+    }
+  }
+
+  function render() {
+    renderSemana();
+    renderLista();
+    $("count-semana").textContent = plural(estado.entradas.length);
+    $("count-lista").textContent = plural(estado.entradas.length);
+  }
+
+  function mostrarEstadoConexion(texto, clase) {
+    var caja = $("conexion-status");
+    caja.textContent = texto;
+    caja.className = "status" + (clase ? " " + clase : "");
+    caja.hidden = false;
+  }
+
+  function datosConexion() {
+    if (estado.modoConexion === "ssh") {
+      return {
+        modo: "ssh",
+        host: $("c-host").value.trim(),
+        usuario: $("c-usuario").value.trim() || "nao",
+        puerto: parseInt($("c-puerto").value, 10) || 22,
+        ruta: $("c-ruta").value.trim(),
+        identidad: $("c-identidad").value.trim(),
+        clave: $("c-clave").value
+      };
+    }
+    return { modo: "local", ruta: $("c-csv").value.trim() };
+  }
+
+  function cambiarModoConexion(modo) {
+    estado.modoConexion = modo;
+    $("seg-local").setAttribute("aria-pressed", modo === "local" ? "true" : "false");
+    $("seg-ssh").setAttribute("aria-pressed", modo === "ssh" ? "true" : "false");
+    $("campos-local").hidden = modo !== "local";
+    $("campos-ssh").hidden = modo !== "ssh";
+    $("conexion-status").hidden = true;
+  }
+
+  function abrirConexion() {
+    var conexion = estado.conexion || {};
+    $("c-host").value = conexion.host || "";
+    $("c-usuario").value = conexion.usuario || "nao";
+    $("c-puerto").value = conexion.puerto || 22;
+    $("c-ruta").value = conexion.ruta || "/home/nao/NAO-MED/data/cronograma.csv";
+    $("c-identidad").value = conexion.identidad || "";
+    $("c-clave").value = "";
+    $("c-csv").value = conexion.modo === "local" ? (conexion.ruta || "") : "";
+    cambiarModoConexion(conexion.modo === "ssh" ? "ssh" : "local");
+    $("overlay-conexion").hidden = false;
+    setTimeout(function () {
+      (estado.modoConexion === "ssh" ? $("c-host") : $("c-csv")).focus();
+    }, 30);
+  }
+
+  function cerrarConexion() {
+    $("overlay-conexion").hidden = true;
+  }
+
+  async function probarConexion() {
+    var boton = $("btn-probar");
+    boton.disabled = true;
+    mostrarEstadoConexion("Probando conexion...", "busy");
+    try {
+      var datos = await api("POST", "/api/conexion/probar", datosConexion());
+      mostrarEstadoConexion(
+        "Conexion correcta con " + datos.archivo + ".\n" +
+        datos.entradas + " entrada(s) en el cronograma.\n" +
+        "Hora del " + datos.reloj.fuente + ": " + datos.reloj.fecha
+      );
+    } catch (error) {
+      mostrarEstadoConexion(error.message, "bad");
+    } finally {
+      boton.disabled = false;
+    }
+  }
+
+  async function aplicarConexion(evento) {
+    evento.preventDefault();
+    var boton = $("btn-aplicar");
+    boton.disabled = true;
+    mostrarEstadoConexion("Conectando...", "busy");
+    try {
+      var datos = await api("POST", "/api/conexion", datosConexion());
+      aplicar(datos);
+      cerrarConexion();
+      avisar(datos.conexion.modo === "ssh"
+        ? "Conectado al NAO " + datos.conexion.host + "."
+        : "Editando el cronograma de este equipo.");
+    } catch (error) {
+      mostrarEstadoConexion(error.message, "bad");
+    } finally {
+      boton.disabled = false;
+    }
+  }
+
+  function renderSemana() {
+    var ahora = new Date();
+    var diaHoy = ahora.getDay() === 0 ? 6 : ahora.getDay() - 1;
+    var horaHoy = ahora.getHours();
+    if (estado.reloj && typeof estado.reloj.dia === "number") {
+      diaHoy = estado.reloj.dia;
+      horaHoy = parseInt(String(estado.reloj.hora).split(":")[0], 10);
+    }
+
+    var porCasilla = {};
+    estado.entradas.forEach(function (entrada) {
+      var dia = indiceDia(entrada.dia);
+      var hora = horaValida(entrada.hora);
+      if (dia < 0 || !hora) return;
+      var clave = dia + "-" + hora.hora;
+      if (!porCasilla[clave]) porCasilla[clave] = [];
+      porCasilla[clave].push(entrada);
+    });
+
+    var html = "<thead><tr><th class='hour'>Hora</th>";
+    estado.dias.forEach(function (dia, i) {
+      html += "<th" + (i === diaHoy ? " class='today'" : "") + ">" + esc(dia) + "</th>";
+    });
+    html += "</tr></thead><tbody>";
+
+    for (var h = 0; h < 24; h++) {
+      html += "<tr" + (h === horaHoy ? " class='now'" : "") + ">";
+      html += "<td class='hour'>" + dos(h) + ":00</td>";
+      for (var d = 0; d < estado.dias.length; d++) {
+        var lista = porCasilla[d + "-" + h] || [];
+        html += "<td class='slot" + (lista.length ? " filled" : "") + "' data-dia='" + d +
+                "' data-hora='" + dos(h) + ":00'>";
+        lista.forEach(function (entrada) {
+          var color = colorDe(entrada.medicamento);
+          html += "<button type='button' class='chip' data-id='" + entrada.id +
+                  "' style='--chip-bg:" + color[0] + ";--chip-line:" + color[1] + "'" +
+                  " title='" + esc(entrada.medicamento) + " - " + esc(entrada.hora) + "'>" +
+                  "<span class='t'>" + esc(entrada.hora) + "</span>" +
+                  "<span class='m'>" + esc(entrada.medicamento) + "</span></button>";
+        });
+        html += "</td>";
+      }
+      html += "</tr>";
+    }
+    html += "</tbody>";
+    $("week").innerHTML = html;
+  }
+
+  function renderLista() {
+    var contenedor = $("lista-wrap");
+    if (!estado.entradas.length) {
+      contenedor.innerHTML = "<div class='empty'><strong>Todavia no hay medicamentos</strong>" +
+        "Usa el boton Agregar para crear la primera entrada del cronograma.</div>";
+      return;
+    }
+
+    var filas = estado.entradas.slice().sort(function (a, b) {
+      var da = indiceDia(a.dia), db = indiceDia(b.dia);
+      if (da !== db) return (da < 0 ? 99 : da) - (db < 0 ? 99 : db);
+      var ha = horaValida(a.hora), hb = horaValida(b.hora);
+      var va = ha ? ha.hora * 60 + ha.minuto : 99999;
+      var vb = hb ? hb.hora * 60 + hb.minuto : 99999;
+      return va - vb;
+    });
+
+    var html = "<table class='list'><thead><tr><th>Medicamento</th><th>Dia</th>" +
+               "<th>Hora</th><th></th></tr></thead><tbody>";
+    filas.forEach(function (entrada) {
+      var diaOk = indiceDia(entrada.dia) >= 0;
+      var horaOk = horaValida(entrada.hora) !== null;
+      var color = colorDe(entrada.medicamento);
+      html += "<tr>" +
+        "<td><span class='chip' style='display:inline-block;width:auto;margin:0;--chip-bg:" +
+          color[0] + ";--chip-line:" + color[1] + "'>" + esc(entrada.medicamento || "(sin nombre)") + "</span></td>" +
+        "<td>" + (diaOk ? "<span class='pill'>" + esc(entrada.dia) + "</span>"
+                         : "<span class='pill warn'>" + esc(entrada.dia || "sin dia") + "</span>") + "</td>" +
+        "<td>" + (horaOk ? "<span class='pill time'>" + esc(entrada.hora) + "</span>"
+                         : "<span class='pill warn'>" + esc(entrada.hora || "sin hora") + "</span>") + "</td>" +
+        "<td class='actions'>" +
+          "<button type='button' class='btn icon' data-editar='" + entrada.id + "'>Editar</button>" +
+          "<button type='button' class='btn icon danger' data-eliminar='" + entrada.id + "'>Eliminar</button>" +
+        "</td></tr>";
+    });
+    html += "</tbody></table>";
+    contenedor.innerHTML = html;
+  }
+  function normalizarHora(texto) {
+    var hora = horaValida(texto);
+    return hora ? dos(hora.hora) + ":" + dos(hora.minuto) : "";
+  }
+
+  function abrirModal(modo, entrada, dia, hora) {
+    estado.editando = modo === "editar" && entrada ? entrada.id : null;
+    $("modal-title").textContent = modo === "editar" ? "Editar medicamento" : "Agregar medicamento";
+    $("modal-sub").textContent = modo === "editar"
+      ? "Cambia los datos y guarda para actualizar el cronograma."
+      : "Elige el medicamento, el dia y la hora.";
+    $("modal-error").hidden = true;
+    $("btn-delete").hidden = modo !== "editar";
+
+    $("f-medicamento").value = entrada ? entrada.medicamento : "";
+
+    var diaElegido = entrada && indiceDia(entrada.dia) >= 0
+      ? estado.dias[indiceDia(entrada.dia)]
+      : (dia || estado.dias[0]);
+    $("f-dia").value = diaElegido;
+
+    var horaElegida = entrada && horaValida(entrada.hora) ? normalizarHora(entrada.hora) : (hora || "08:00");
+    $("f-hora").value = horaElegida;
+
+    $("overlay").hidden = false;
+    setTimeout(function () {
+      $("f-medicamento").focus();
+      $("f-medicamento").select();
+    }, 30);
+  }
+
+  function cerrarModal() {
+    $("overlay").hidden = true;
+    estado.editando = null;
+  }
+
+  function mostrarError(texto) {
+    var caja = $("modal-error");
+    caja.textContent = texto;
+    caja.hidden = false;
+  }
+
+  async function guardar(evento) {
+    evento.preventDefault();
+    var datos = {
+      medicamento: $("f-medicamento").value,
+      dia: $("f-dia").value,
+      hora: $("f-hora").value
+    };
+    var boton = $("btn-save");
+    var editando = estado.editando !== null;
+    boton.disabled = true;
+    try {
+      var respuesta = editando
+        ? await api("PUT", "/api/cronograma/" + estado.editando, datos)
+        : await api("POST", "/api/cronograma", datos);
+      aplicar(respuesta);
+      cerrarModal();
+      avisar(editando ? "Entrada actualizada." : "Entrada agregada.");
+    } catch (error) {
+      mostrarError(error.message);
+    } finally {
+      boton.disabled = false;
+    }
+  }
+
+  async function eliminar(id) {
+    var entrada = estado.entradas.filter(function (e) { return e.id === id; })[0];
+    if (!entrada) return;
+    var texto = "Se eliminara " + entrada.medicamento + " del " + entrada.dia + " a las " + entrada.hora + ".";
+    if (!window.confirm(texto + "\n\nEsta seguro?")) return;
+    try {
+      var respuesta = await api("DELETE", "/api/cronograma/" + id);
+      aplicar(respuesta);
+      cerrarModal();
+      avisar("Entrada eliminada.");
+    } catch (error) {
+      mostrarError(error.message);
+      avisar(error.message, true);
+    }
+  }
+
+  function cambiarVista(vista) {
+    estado.vista = vista;
+    ["semana", "lista"].forEach(function (nombre) {
+      var activa = nombre === vista;
+      $("tab-" + nombre).setAttribute("aria-selected", activa ? "true" : "false");
+      $("view-" + nombre).hidden = !activa;
+    });
+  }
+
+  function conectarEventos() {
+    document.querySelectorAll(".tabs button").forEach(function (boton) {
+      boton.addEventListener("click", function () { cambiarVista(boton.dataset.view); });
+    });
+
+    $("btn-add").addEventListener("click", function () { abrirModal("agregar"); });
+
+    $("btn-conexion").addEventListener("click", abrirConexion);
+    $("seg-local").addEventListener("click", function () { cambiarModoConexion("local"); });
+    $("seg-ssh").addEventListener("click", function () { cambiarModoConexion("ssh"); });
+    $("btn-probar").addEventListener("click", probarConexion);
+    $("form-conexion").addEventListener("submit", aplicarConexion);
+    $("btn-cerrar-conexion").addEventListener("click", cerrarConexion);
+    $("overlay-conexion").addEventListener("mousedown", function (evento) {
+      if (evento.target === $("overlay-conexion")) cerrarConexion();
+    });
+
+    $("week").addEventListener("click", function (evento) {
+      var chip = evento.target.closest(".chip");
+      if (chip) {
+        var id = parseInt(chip.dataset.id, 10);
+        var entrada = estado.entradas.filter(function (e) { return e.id === id; })[0];
+        if (entrada) abrirModal("editar", entrada);
+        return;
+      }
+      var casilla = evento.target.closest("td.slot");
+      if (casilla) {
+        abrirModal("agregar", null, estado.dias[parseInt(casilla.dataset.dia, 10)], casilla.dataset.hora);
+      }
+    });
+
+    $("lista-wrap").addEventListener("click", function (evento) {
+      var editar = evento.target.closest("[data-editar]");
+      if (editar) {
+        var id = parseInt(editar.dataset.editar, 10);
+        var entrada = estado.entradas.filter(function (e) { return e.id === id; })[0];
+        if (entrada) abrirModal("editar", entrada);
+        return;
+      }
+      var borrar = evento.target.closest("[data-eliminar]");
+      if (borrar) eliminar(parseInt(borrar.dataset.eliminar, 10));
+    });
+
+    $("form").addEventListener("submit", guardar);
+    $("btn-cancel").addEventListener("click", cerrarModal);
+    $("btn-delete").addEventListener("click", function () {
+      if (estado.editando !== null) eliminar(estado.editando);
+    });
+    $("overlay").addEventListener("mousedown", function (evento) {
+      if (evento.target === $("overlay")) cerrarModal();
+    });
+    document.addEventListener("keydown", function (evento) {
+      if (evento.key !== "Escape") return;
+      if (!$("overlay").hidden) cerrarModal();
+      if (!$("overlay-conexion").hidden) cerrarConexion();
+    });
+  }
+
+  function llenarSelectores() {
+    $("f-dia").innerHTML = estado.dias.map(function (dia) {
+      return "<option value='" + esc(dia) + "'>" + esc(dia) + "</option>";
+    }).join("");
+    $("medicamentos").innerHTML = estado.medicamentos.map(function (nombre) {
+      return "<option value='" + esc(nombre) + "'></option>";
+    }).join("");
+  }
+
+  async function cargar() {
+    try {
+      var datos = await api("GET", "/api/cronograma");
+      estado.dias = datos.dias || [];
+      estado.medicamentos = datos.medicamentos || [];
+      llenarSelectores();
+      aplicar(datos);
+    } catch (error) {
+      avisar(error.message, true);
+    }
+  }
+
+  conectarEventos();
+  cargar();
+})();
+</script>
+</body>
+</html>

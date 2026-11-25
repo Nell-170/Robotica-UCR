@@ -1,0 +1,4 @@
+# Interfaz web del cronograma (src/cronograma_ui.py), Python 3.
+# Solo hace falta para conectarse al NAO con contrasena por SSH.
+# Sin este archivo la interfaz funciona igual en modo local y con clave SSH.
+paramiko==5.1.0

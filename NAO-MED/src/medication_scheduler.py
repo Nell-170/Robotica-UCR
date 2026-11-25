@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 """
 Verificador de cronograma: revisa si en este momento (dia/hora del
-sistema) corresponde suministrar algun medicamento del cronograma.
+reloj configurado) corresponde suministrar algun medicamento del
+cronograma. Por defecto usa el reloj de la PC; main.py puede pasarle
+el reloj interno del NAO.
 """
 import time
 from datetime import datetime
@@ -34,14 +36,19 @@ def buscar_medicamento_pendiente(cronograma, ahora=None):
 
 
 def ejecutar_monitor(accion_notificar, csv_path=DEFAULT_CSV_PATH,
-                      intervalo=INTERVALO_REVISION_SEGUNDOS):
+                      intervalo=INTERVALO_REVISION_SEGUNDOS, reloj=None):
     """
     Bucle infinito que revisa el cronograma periodicamente y llama a
     'accion_notificar(medicamento)' cuando corresponde suministrar uno.
 
+    'reloj' es una funcion sin argumentos que retorna el datetime actual;
+    por defecto usa el reloj de la PC. main.py le pasa el reloj del NAO
+    (reloj.crear_reloj_robot) cuando hay robot real.
+
     Evita repetir la misma notificacion varias veces durante el mismo
     minuto (ya que se revisa cada pocos segundos).
     """
+    reloj = reloj or datetime.now
     cronograma = cargar_cronograma(csv_path)
     print("Cronograma cargado ({} medicamento(s)).".format(len(cronograma)))
 
@@ -50,7 +57,7 @@ def ejecutar_monitor(accion_notificar, csv_path=DEFAULT_CSV_PATH,
     print("Monitor de medicacion iniciado. Presiona Ctrl+C para detener.")
     try:
         while True:
-            ahora = datetime.now()
+            ahora = reloj()
             pendiente = buscar_medicamento_pendiente(cronograma, ahora)
 
             if pendiente is not None:
