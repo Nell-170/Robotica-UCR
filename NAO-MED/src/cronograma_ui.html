@@ -694,9 +694,11 @@
 (function () {
   "use strict";
 
+  var RUTA_NAO = "/home/nao/NAO-MED/data/cronograma.csv";
+
   var estado = {
     entradas: [], dias: [], medicamentos: [], vista: "semana", editando: null,
-    conexion: null, reloj: null, modoConexion: "local"
+    conexion: null, reloj: null, modoConexion: "local", rutaNao: RUTA_NAO
   };
 
   var PALETA = [
@@ -782,6 +784,9 @@
     estado.medicamentos = datos.medicamentos || estado.medicamentos;
     estado.conexion = datos.conexion || estado.conexion;
     estado.reloj = datos.reloj || estado.reloj;
+    if (estado.conexion && estado.conexion.modo === "ssh" && estado.conexion.ruta) {
+      estado.rutaNao = estado.conexion.ruta;
+    }
     if (datos.archivo) $("ruta-archivo").textContent = datos.archivo;
     actualizarConexion();
     render();
@@ -856,7 +861,7 @@
     $("c-host").value = conexion.host || "";
     $("c-usuario").value = conexion.usuario || "nao";
     $("c-puerto").value = conexion.puerto || 22;
-    $("c-ruta").value = conexion.ruta || "/home/nao/NAO-MED/data/cronograma.csv";
+    $("c-ruta").value = estado.rutaNao;
     $("c-identidad").value = conexion.identidad || "";
     $("c-clave").value = "";
     $("c-csv").value = conexion.modo === "local" ? (conexion.ruta || "") : "";
